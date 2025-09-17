@@ -1,5 +1,5 @@
 import type { CSSProperties } from "@stitches/react";
-import { Handle, type Position } from "@xyflow/react";
+import { Handle, type Position, useNodeId, useReactFlow } from "@xyflow/react";
 import type { FC } from "react";
 import { Box } from "../ui/Box";
 import { StyledText } from "../ui/Typography";
@@ -19,6 +19,19 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 	style,
 	label,
 }) => {
+	const nodeId = useNodeId();
+	const { setEdges } = useReactFlow();
+
+	const onContextMenu: React.MouseEventHandler = (event) => {
+		event.preventDefault();
+		if (!nodeId) return;
+		setEdges((prev) =>
+			prev.filter(
+				(edge) => edge[type] !== nodeId || edge[`${type}Handle`] !== id,
+			),
+		);
+	};
+
 	return (
 		<Handle
 			type={type}
@@ -28,6 +41,7 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 				all: "unset",
 				...style,
 			}}
+			onContextMenu={onContextMenu}
 		>
 			<Box
 				css={{

@@ -43,7 +43,7 @@ const StyledInput = styled("input", {
 export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	data: { name, expression, inputs, computedValue },
 }) => {
-	const { setNodes } = useReactFlow();
+	const { setNodes, setEdges } = useReactFlow();
 
 	const outHandleId = useId();
 
@@ -54,14 +54,9 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const [isEditing, setIsEditing] = useState(false);
 	const inputRef = useRef<HTMLInputElement | null>(null);
 
-	const { upstreamMissing, nextValue } = useMemo(() => {
-		if (!nodeId)
-			return {
-				upstreamMissing: true,
-				nextValue: null as number | null,
-			};
+	const nextValue = useMemo(() => {
+		if (!nodeId) return null as number | null;
 		const variables: Record<string, number> = {};
-		let missing = false;
 		for (const variable of inputs) {
 			const edge = allEdges.find(
 				(e) =>
@@ -69,61 +64,49 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 					e.type === "weighted" &&
 					e.targetHandle === variable,
 			);
-			if (!edge) {
-				missing = true;
-				continue;
-			}
+			if (!edge) return null;
 			const srcNode = allNodes.find((node) => node.id === edge.source);
 			const value =
 				typeof srcNode?.data.computedValue === "number"
 					? srcNode.data.computedValue
 					: null;
-			if (value === null) {
-				missing = true;
-			} else {
-				variables[variable] = value;
-			}
-		}
-		if (missing) {
-			return { upstreamMissing: true, nextValue: null };
+			if (value === null) return null;
+			variables[variable] = value;
 		}
 		try {
 			const computed = compute(expression, variables);
-			const value = Number.isFinite(computed) ? (computed as number) : null;
-			return { upstreamMissing: false, nextValue: value };
+			return Number.isFinite(computed) ? computed : null;
 		} catch {
-			return { upstreamMissing: true, nextValue: null };
+			return null;
 		}
 	}, [allEdges, allNodes, inputs, nodeId, expression]);
 
 	useEffect(() => {
 		if (!nodeId) return;
 
-		if (upstreamMissing) {
-			if (computedValue !== null) {
-				setNodes(
-					updateOne("id", nodeId, (node) => ({
-						...node,
-						data: { ...node.data, computedValue: null },
-					})),
-				);
-			}
-			return;
-		}
-
 		const next = nextValue;
 		if (next !== computedValue) {
 			setNodes(
 				updateOne("id", nodeId, (node) => ({
 					...node,
-					data: {
-						...node.data,
-						computedValue: next,
-					},
+					data: { ...node.data, computedValue: next },
 				})),
 			);
 		}
-	}, [computedValue, nodeId, setNodes, upstreamMissing, nextValue]);
+	}, [computedValue, nodeId, setNodes, nextValue]);
+
+	useEffect(() => {
+		if (!nodeId) return;
+
+		const validHandles = new Set(inputs);
+		setEdges((prev) =>
+			prev.filter((edge) => {
+				if (edge.target !== nodeId) return true;
+				if (!edge.targetHandle) return false;
+				return validHandles.has(edge.targetHandle);
+			}),
+		);
+	}, [inputs, nodeId, setEdges]);
 
 	const handleChange = ({
 		currentTarget: { value: current },
