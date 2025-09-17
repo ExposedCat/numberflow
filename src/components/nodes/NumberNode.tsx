@@ -53,15 +53,14 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const [isEditing, setIsEditing] = useState(false);
 	const inputRef = useRef<HTMLInputElement | null>(null);
 
-	const { upstreamMissing, upstreamVariablesJson } = useMemo(() => {
+	const { upstreamMissing, nextValue } = useMemo(() => {
 		if (!nodeId)
 			return {
 				upstreamMissing: true,
-				upstreamVariablesJson: "{}",
+				nextValue: null as number | null,
 			};
 		const variables: Record<string, number> = {};
 		let missing = false;
-		const parts: string[] = [];
 		for (const variable of inputs) {
 			const edge = allEdges.find(
 				(e) =>
@@ -69,10 +68,8 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 					e.type === "weighted" &&
 					e.targetHandle === variable,
 			);
-			const edgeId = edge?.id ?? "none";
 			if (!edge) {
 				missing = true;
-				parts.push(`${variable}@${edgeId}=null`);
 				continue;
 			}
 			const srcNode = allNodes.find((node) => node.id === edge.source);
@@ -82,23 +79,21 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 					: null;
 			if (value === null) {
 				missing = true;
-				parts.push(`${variable}@${edgeId}=null`);
 			} else {
 				variables[variable] = value;
-				parts.push(`${variable}@${edgeId}=${value}`);
 			}
 		}
-		// Ensure stable order
-		parts.sort();
-		const orderedVariables: Record<string, number> = {};
-		for (const key of Object.keys(variables).sort()) {
-			orderedVariables[key] = variables[key];
+		if (missing) {
+			return { upstreamMissing: true, nextValue: null };
 		}
-		return {
-			upstreamMissing: missing,
-			upstreamVariablesJson: JSON.stringify(orderedVariables),
-		};
-	}, [allEdges, allNodes, inputs, nodeId]);
+		try {
+			const computed = compute(expression, variables);
+			const value = Number.isFinite(computed) ? (computed as number) : null;
+			return { upstreamMissing: false, nextValue: value };
+		} catch {
+			return { upstreamMissing: true, nextValue: null };
+		}
+	}, [allEdges, allNodes, inputs, nodeId, expression]);
 
 	useEffect(() => {
 		if (!nodeId) return;
@@ -115,42 +110,19 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			return;
 		}
 
-		try {
-			const variables = JSON.parse(upstreamVariablesJson) as Record<
-				string,
-				number
-			>;
-			const nextRaw = compute(expression, variables);
-			const next = Number.isFinite(nextRaw) ? nextRaw : null;
-			if (next !== computedValue) {
-				setNodes(
-					updateOne("id", nodeId, (node) => ({
-						...node,
-						data: {
-							...node.data,
-							computedValue: next,
-						},
-					})),
-				);
-			}
-		} catch {
-			if (computedValue !== null) {
-				setNodes(
-					updateOne("id", nodeId, (node) => ({
-						...node,
-						data: { ...node.data, computedValue: null },
-					})),
-				);
-			}
+		const next = nextValue;
+		if (next !== computedValue) {
+			setNodes(
+				updateOne("id", nodeId, (node) => ({
+					...node,
+					data: {
+						...node.data,
+						computedValue: next,
+					},
+				})),
+			);
 		}
-	}, [
-		computedValue,
-		expression,
-		nodeId,
-		setNodes,
-		upstreamMissing,
-		upstreamVariablesJson,
-	]);
+	}, [computedValue, nodeId, setNodes, upstreamMissing, nextValue]);
 
 	const handleChange = ({
 		currentTarget: { value: current },
