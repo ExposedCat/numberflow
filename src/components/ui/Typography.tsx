@@ -4,6 +4,11 @@ export const StyledText = styled("span", {
 	color: "$text-primary",
 
 	variants: {
+		color: {
+			primary: { color: "$text-primary" },
+			inverse: { color: "$text-inverse" },
+			muted: { color: "$text-muted" },
+		},
 		variant: {
 			small: {
 				fontSize: "$small",
