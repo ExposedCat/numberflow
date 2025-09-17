@@ -20,6 +20,7 @@ import { LocalHandle } from "./LocalHandle";
 
 export type NumberNodeType = Node<
 	{
+		name?: string;
 		expression: string;
 		inputs: string[];
 		computedValue: number | null;
@@ -40,7 +41,7 @@ const StyledInput = styled("input", {
 });
 
 export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
-	data: { expression, inputs, computedValue },
+	data: { name, expression, inputs, computedValue },
 }) => {
 	const { setNodes } = useReactFlow();
 
@@ -152,16 +153,18 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				borderRadius: "$basic",
 			}}
 		>
-			<Box
-				center
-				css={{
-					width: "100%",
-					borderBottom: "solid $border-default",
-					borderWidth: "$thin",
-				}}
-			>
-				<StyledText>Node</StyledText>
-			</Box>
+			{name && (
+				<Box
+					center
+					css={{
+						width: "100%",
+						borderBottom: "solid $border-default",
+						borderWidth: "$thin",
+					}}
+				>
+					<StyledText>{name}</StyledText>
+				</Box>
+			)}
 
 			<Box
 				css={{
@@ -173,8 +176,11 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			>
 				<Box
 					column
-					center
-					css={{ gap: "$xs", marginLeft: inputs.length > 0 ? "-$sm" : "0" }}
+					css={{
+						gap: "$xs",
+						alignItems: "flex-start",
+						marginLeft: inputs.length > 0 ? "-$sm" : "0",
+					}}
 				>
 					{inputs.map((name) => (
 						<LocalHandle
@@ -193,7 +199,6 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 					<Box
 						center
 						css={{
-							alignSelf: "center",
 							position: "absolute",
 							pointerEvents: "none",
 							height: "100%",
