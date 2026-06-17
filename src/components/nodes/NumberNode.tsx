@@ -7,14 +7,17 @@ import {
 	useNodeId,
 	useNodes,
 	useReactFlow,
+	useUpdateNodeInternals,
 } from "@xyflow/react";
-import type { ChangeEvent, FC } from "react";
+import type { ChangeEvent, FC, KeyboardEvent, PointerEvent } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { styled } from "@/theme";
 import { compute, evaluate } from "@/utils/math";
 import { updateOne } from "@/utils/state";
 import type { WeightedEdgeType } from "../edges/WeightedEdge";
 import { Box } from "../ui/Box";
+import { PopupContent } from "../ui/Popup";
 import { StyledText } from "../ui/Typography";
 import { LocalHandle } from "./LocalHandle";
 
@@ -28,22 +31,67 @@ export type NumberNodeType = Node<
 	"number"
 >;
 
-const StyledInput = styled("input", {
+const StyledTextarea = styled("textarea", {
+	boxSizing: "border-box",
+	display: "block",
+	fieldSizing: "content",
 	fontSize: "$normal",
+	lineHeight: "1.4",
+	maxHeight: "8rem",
+	minWidth: 0,
+	minHeight: "2.25rem",
+	overflow: "auto",
+	resize: "none",
 	width: "100%",
-	height: "100%",
 	border: "none",
-	padding: "0",
+	borderRadius: "$inner",
+	paddingBlock: "$xs",
+	paddingInline: "$sm",
 	"&:focus": {
 		outline: "none",
 	},
-	textAlign: "center",
 });
+
+const StyledField = styled("button", {
+	alignItems: "center",
+	background: "transparent",
+	border: "none",
+	color: "inherit",
+	cursor: "text",
+	display: "flex",
+	fontFamily: "inherit",
+	fontSize: "$normal",
+	height: "100%",
+	justifyContent: "center",
+	marginRight: "$sm",
+	padding: 0,
+	textAlign: "center",
+	width: "calc(100% - 0.5rem)",
+});
+
+const ExpressionPopup = styled(PopupContent, {
+	position: "fixed",
+	width: "min(28rem, calc(100vw - 2rem))",
+	minWidth: "14rem",
+	transform: "translateX(-50%)",
+});
+
+const resizeTextarea = (textarea: HTMLTextAreaElement) => {
+	const { maxHeight } = window.getComputedStyle(textarea);
+	const maxHeightValue = Number.parseFloat(maxHeight);
+
+	textarea.style.height = "auto";
+	textarea.style.height = `${Math.min(
+		textarea.scrollHeight,
+		Number.isFinite(maxHeightValue) ? maxHeightValue : textarea.scrollHeight,
+	)}px`;
+};
 
 export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	data: { name, expression, inputs, computedValue },
 }) => {
 	const { setNodes, setEdges } = useReactFlow();
+	const updateNodeInternals = useUpdateNodeInternals();
 
 	const outHandleId = useId();
 
@@ -52,7 +100,17 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const allNodes = useNodes<NumberNodeType>();
 
 	const [isEditing, setIsEditing] = useState(false);
-	const inputRef = useRef<HTMLInputElement | null>(null);
+	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+	const fieldRef = useRef<HTMLButtonElement | null>(null);
+	const pointerStartRef = useRef<{
+		x: number;
+		y: number;
+		moved: boolean;
+	} | null>(null);
+	const [popupPosition, setPopupPosition] = useState<{
+		top: number;
+		left: number;
+	} | null>(null);
 
 	const nextValue = useMemo(() => {
 		if (!nodeId) return null as number | null;
@@ -98,6 +156,8 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	useEffect(() => {
 		if (!nodeId) return;
 
+		updateNodeInternals(nodeId);
+
 		const validHandles = new Set(inputs);
 		setEdges((prev) =>
 			prev.filter((edge) => {
@@ -106,11 +166,12 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				return validHandles.has(edge.targetHandle);
 			}),
 		);
-	}, [inputs, nodeId, setEdges]);
+	}, [inputs, nodeId, setEdges, updateNodeInternals]);
 
 	const handleChange = ({
-		currentTarget: { value: current },
-	}: ChangeEvent<HTMLInputElement>) => {
+		currentTarget,
+	}: ChangeEvent<HTMLTextAreaElement>) => {
+		const { value: current } = currentTarget;
 		if (!nodeId) return;
 		let nextInputs: string[] = [];
 		try {
@@ -124,6 +185,72 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				data: { ...node.data, expression: current, inputs: nextInputs },
 			})),
 		);
+		resizeTextarea(currentTarget);
+	};
+
+	const openEditor = (target: HTMLElement) => {
+		const rect = target.getBoundingClientRect();
+		setPopupPosition({
+			top: rect.bottom + 8,
+			left: rect.left + rect.width / 2,
+		});
+		setIsEditing(true);
+	};
+
+	useEffect(() => {
+		if (!isEditing) return;
+		inputRef.current?.focus();
+		inputRef.current?.select();
+		if (inputRef.current) {
+			resizeTextarea(inputRef.current);
+		}
+	}, [isEditing]);
+
+	const handleFieldPointerDown = ({
+		clientX,
+		clientY,
+	}: PointerEvent<HTMLButtonElement>) => {
+		pointerStartRef.current = { x: clientX, y: clientY, moved: false };
+	};
+
+	const handleFieldPointerMove = ({
+		clientX,
+		clientY,
+	}: PointerEvent<HTMLButtonElement>) => {
+		const start = pointerStartRef.current;
+		if (!start) return;
+
+		const distance = Math.hypot(clientX - start.x, clientY - start.y);
+		if (distance > 4) {
+			start.moved = true;
+		}
+	};
+
+	const handleFieldPointerUp = ({
+		clientX,
+		clientY,
+	}: PointerEvent<HTMLButtonElement>) => {
+		const start = pointerStartRef.current;
+		pointerStartRef.current = null;
+		if (!start) return;
+
+		const distance = Math.hypot(clientX - start.x, clientY - start.y);
+		if (!start.moved && distance <= 4) {
+			if (fieldRef.current) {
+				openEditor(fieldRef.current);
+			}
+		}
+	};
+
+	const handleInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+		if (event.key === "Enter" && !event.shiftKey) {
+			event.preventDefault();
+			setIsEditing(false);
+		}
+		if (event.key === "Escape") {
+			event.preventDefault();
+			setIsEditing(false);
+		}
 	};
 
 	return (
@@ -179,32 +306,56 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				<Box
 					css={{ width: "100%", position: "relative", paddingInline: "$xs" }}
 				>
-					<Box
-						center
-						css={{
-							position: "absolute",
-							pointerEvents: "none",
-							height: "100%",
-							width: "100%",
-							display: isEditing ? "none" : "flex",
+					<StyledField
+						ref={fieldRef}
+						type="button"
+						tabIndex={0}
+						aria-label="Edit expression"
+						onPointerDown={handleFieldPointerDown}
+						onPointerMove={handleFieldPointerMove}
+						onPointerUp={handleFieldPointerUp}
+						onPointerCancel={() => {
+							pointerStartRef.current = null;
+						}}
+						onKeyDown={(event) => {
+							if (event.key === "Enter" || event.key === " ") {
+								event.preventDefault();
+								openEditor(event.currentTarget);
+							}
 						}}
 					>
 						<StyledText>{computedValue ?? "NULL"}</StyledText>
-					</Box>
-					<StyledInput
-						ref={inputRef}
-						type="text"
-						value={expression ?? ""}
-						onChange={handleChange}
-						className="nodrag"
-						onFocus={() => setIsEditing(true)}
-						onBlur={() => setIsEditing(false)}
-						css={{
-							opacity: isEditing ? 1 : 0,
-						}}
-					/>
+					</StyledField>
 
-					<Handle type="source" id={outHandleId} position={Position.Right} />
+					{isEditing &&
+						popupPosition &&
+						createPortal(
+							<ExpressionPopup
+								className="nodrag nowheel nopan"
+								css={{
+									top: popupPosition.top,
+									left: popupPosition.left,
+								}}
+								onClick={(event) => event.stopPropagation()}
+								onPointerDown={(event) => event.stopPropagation()}
+							>
+								<StyledTextarea
+									ref={inputRef}
+									value={expression ?? ""}
+									onChange={handleChange}
+									onBlur={() => setIsEditing(false)}
+									onKeyDown={handleInputKeyDown}
+								/>
+							</ExpressionPopup>,
+							document.body,
+						)}
+
+					<Handle
+						type="source"
+						id={outHandleId}
+						position={Position.Right}
+						style={{ zIndex: 2 }}
+					/>
 				</Box>
 			</Box>
 		</Box>

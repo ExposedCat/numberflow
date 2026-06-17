@@ -1,7 +1,6 @@
 import type { CSSProperties } from "@stitches/react";
 import { Handle, type Position, useNodeId, useReactFlow } from "@xyflow/react";
 import type { FC } from "react";
-import { Box } from "../ui/Box";
 import { StyledText } from "../ui/Typography";
 
 export type NodeHandleProps = {
@@ -38,21 +37,29 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 			id={id}
 			position={position}
 			style={{
-				all: "unset",
+				position: "relative",
+				top: "auto",
+				left: "auto",
+				right: "auto",
+				bottom: "auto",
+				display: "inline-flex",
+				width: "auto",
+				height: "auto",
+				minWidth: 0,
+				minHeight: 0,
+				background: "black",
+				color: "white",
+				border: "none",
+				borderRadius: "0.5rem",
+				padding: "1px 4px",
+				transform: "none",
 				...style,
 			}}
 			onContextMenu={onContextMenu}
 		>
-			<Box
-				css={{
-					background: "black",
-					color: "white",
-					borderRadius: "$basic",
-					padding: "1px 4px",
-				}}
-			>
-				<StyledText color="inverse">{label}</StyledText>
-			</Box>
+			<StyledText color="inverse" css={{ pointerEvents: "none" }}>
+				{label}
+			</StyledText>
 		</Handle>
 	);
 };

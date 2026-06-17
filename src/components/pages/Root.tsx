@@ -9,7 +9,11 @@ import { type FC, useCallback, useMemo } from "react";
 import { Box } from "../ui/Box";
 
 import "@xyflow/react/dist/style.css";
-import { WeightedEdge, type WeightedEdgeType } from "../edges/WeightedEdge";
+import {
+	WeightedConnectionLine,
+	WeightedEdge,
+	type WeightedEdgeType,
+} from "../edges/WeightedEdge";
 import { NumberNode, type NumberNodeType } from "../nodes/NumberNode";
 import { Button } from "../ui/Button";
 
@@ -55,6 +59,10 @@ export const Root: FC = () => {
 				{...{ nodes, edges, onNodesChange, onEdgesChange, onConnect }}
 				nodeTypes={nodeTypes}
 				edgeTypes={edgeTypes}
+				connectionLineComponent={WeightedConnectionLine}
+				panOnDrag={[1]}
+				panOnScroll
+				zoomOnScroll={false}
 			/>
 		</Box>
 	);
