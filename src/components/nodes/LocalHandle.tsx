@@ -11,6 +11,8 @@ export type NodeHandleProps = {
 	style?: CSSProperties;
 };
 
+export type DotHandleProps = Omit<NodeHandleProps, "label">;
+
 export const LocalHandle: FC<NodeHandleProps> = ({
 	type,
 	id,
@@ -43,6 +45,8 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 				right: "auto",
 				bottom: "auto",
 				display: "inline-flex",
+				alignItems: "center",
+				justifyContent: "center",
 				width: "auto",
 				height: "auto",
 				minWidth: 0,
@@ -61,5 +65,54 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 				{label}
 			</StyledText>
 		</Handle>
+	);
+};
+
+export const DotHandle: FC<DotHandleProps> = ({
+	type,
+	id,
+	position,
+	style,
+}) => {
+	const nodeId = useNodeId();
+	const { setEdges } = useReactFlow();
+
+	const onContextMenu: React.MouseEventHandler = (event) => {
+		event.preventDefault();
+		if (!nodeId) return;
+		setEdges((prev) =>
+			prev.filter(
+				(edge) => edge[type] !== nodeId || edge[`${type}Handle`] !== id,
+			),
+		);
+	};
+
+	return (
+		<Handle
+			type={type}
+			id={id}
+			position={position}
+			style={{
+				position: "relative",
+				top: "auto",
+				left: "auto",
+				right: "auto",
+				bottom: "auto",
+				display: "inline-flex",
+				width: "6px",
+				height: "6px",
+				minWidth: "6px",
+				minHeight: "6px",
+				background:
+					"var(--xy-handle-background-color, var(--xy-handle-background-color-default))",
+				border:
+					"1px solid var(--xy-handle-border-color, var(--xy-handle-border-color-default))",
+				borderRadius: "50%",
+				padding: 0,
+				transform: "none",
+				...style,
+			}}
+			onContextMenu={onContextMenu}
+		/>
 	);
 };

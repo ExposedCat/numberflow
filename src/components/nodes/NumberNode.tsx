@@ -19,7 +19,7 @@ import type { WeightedEdgeType } from "../edges/WeightedEdge";
 import { Box } from "../ui/Box";
 import { PopupContent } from "../ui/Popup";
 import { StyledText } from "../ui/Typography";
-import { LocalHandle } from "./LocalHandle";
+import { DotHandle, LocalHandle } from "./LocalHandle";
 
 export type NumberNodeType = Node<
 	{
@@ -63,10 +63,59 @@ const StyledField = styled("button", {
 	fontSize: "$normal",
 	height: "100%",
 	justifyContent: "center",
-	marginRight: "$sm",
+	marginRight: 0,
 	padding: 0,
 	textAlign: "center",
-	width: "calc(100% - 0.5rem)",
+	width: "100%",
+});
+
+const DotHandleRow = styled("div", {
+	alignItems: "center",
+	display: "flex",
+	flex: "0 0 auto",
+	height: "1.35rem",
+	width: "6px",
+});
+
+const TopHandleRail = styled("div", {
+	position: "absolute",
+	top: 0,
+	left: "50%",
+	zIndex: 3,
+	display: "flex",
+	gap: "$xs",
+	alignItems: "center",
+	transform: "translate(-50%, -50%)",
+});
+
+const HandleSizerRail = styled("div", {
+	display: "flex",
+	gap: "$xs",
+	alignItems: "center",
+	height: "0.75rem",
+	overflow: "visible",
+	paddingInline: "$xs",
+	visibility: "hidden",
+	pointerEvents: "none",
+});
+
+const HandleLabelSizer = styled("span", {
+	display: "inline-flex",
+	background: "black",
+	color: "white",
+	border: "none",
+	borderRadius: "0.5rem",
+	padding: "1px 4px",
+});
+
+const DotHandleSizer = styled("span", {
+	display: "inline-flex",
+	width: "6px",
+	height: "6px",
+	minWidth: "6px",
+	minHeight: "6px",
+	border: "1px solid transparent",
+	borderRadius: "50%",
 });
 
 const ExpressionPopup = styled(PopupContent, {
@@ -75,6 +124,147 @@ const ExpressionPopup = styled(PopupContent, {
 	minWidth: "14rem",
 	transform: "translateX(-50%)",
 });
+
+const isCompactInputName = (name: string) =>
+	name === "input" || name.length <= 5;
+
+type SourceHandlePosition = Position.Bottom | Position.Right;
+type TargetHandlePosition = Position.Left | Position.Top;
+
+const SWITCH_DISTANCE_MARGIN = 5;
+
+const sourceHandlePositions = [
+	Position.Bottom,
+	Position.Right,
+] as const satisfies readonly SourceHandlePosition[];
+const compactTargetHandlePositions = [
+	Position.Top,
+	Position.Left,
+] as const satisfies readonly TargetHandlePosition[];
+
+const getNodeRect = (node: NumberNodeType) => {
+	const width = node.measured?.width ?? node.width ?? 0;
+	const height = node.measured?.height ?? node.height ?? 0;
+
+	return {
+		x: node.position.x,
+		y: node.position.y,
+		width,
+		height,
+	};
+};
+
+const getHandlePoint = (
+	node: NumberNodeType,
+	position: SourceHandlePosition | TargetHandlePosition,
+) => {
+	const { x, y, width, height } = getNodeRect(node);
+
+	switch (position) {
+		case Position.Top:
+			return { x: x + width / 2, y };
+		case Position.Right:
+			return { x: x + width, y: y + height / 2 };
+		case Position.Bottom:
+			return { x: x + width / 2, y: y + height };
+		case Position.Left:
+			return { x, y: y + height / 2 };
+	}
+};
+
+const getDistance = (
+	sourceNode: NumberNodeType,
+	sourcePosition: SourceHandlePosition,
+	targetNode: NumberNodeType,
+	targetPosition: TargetHandlePosition,
+) => {
+	const source = getHandlePoint(sourceNode, sourcePosition);
+	const target = getHandlePoint(targetNode, targetPosition);
+	return Math.hypot(target.x - source.x, target.y - source.y);
+};
+
+const getTargetHandlePositions = (
+	targetHandle: string | null | undefined,
+): readonly TargetHandlePosition[] =>
+	targetHandle && isCompactInputName(targetHandle)
+		? compactTargetHandlePositions
+		: ([Position.Left] as TargetHandlePosition[]);
+
+const getBestTargetPosition = (
+	sourceNode: NumberNodeType,
+	sourcePosition: SourceHandlePosition,
+	targetNode: NumberNodeType,
+	targetHandle: string | null | undefined,
+	preferredPosition?: TargetHandlePosition,
+) => {
+	const candidates = getTargetHandlePositions(targetHandle);
+	const initial =
+		preferredPosition && candidates.includes(preferredPosition)
+			? preferredPosition
+			: candidates[0];
+
+	return candidates.reduce((best, candidate) => {
+		const bestDistance = getDistance(
+			sourceNode,
+			sourcePosition,
+			targetNode,
+			best,
+		);
+		const candidateDistance = getDistance(
+			sourceNode,
+			sourcePosition,
+			targetNode,
+			candidate,
+		);
+		return candidateDistance + SWITCH_DISTANCE_MARGIN < bestDistance
+			? candidate
+			: best;
+	}, initial);
+};
+
+const getBestSourcePosition = (
+	sourceNode: NumberNodeType,
+	allEdges: WeightedEdgeType[],
+	allNodes: NumberNodeType[],
+	preferredPosition?: SourceHandlePosition,
+) => {
+	const outgoingEdges = allEdges.filter(
+		(edge) => edge.source === sourceNode.id,
+	);
+	if (outgoingEdges.length === 0) {
+		return Position.Right;
+	}
+
+	const getTotalDistance = (sourcePosition: SourceHandlePosition) =>
+		outgoingEdges.reduce((total, edge) => {
+			const targetNode = allNodes.find((node) => node.id === edge.target);
+			if (!targetNode) return total;
+
+			const targetPosition = getBestTargetPosition(
+				sourceNode,
+				sourcePosition,
+				targetNode,
+				edge.targetHandle,
+			);
+
+			return (
+				total +
+				getDistance(sourceNode, sourcePosition, targetNode, targetPosition)
+			);
+		}, 0);
+
+	const initial =
+		preferredPosition && sourceHandlePositions.includes(preferredPosition)
+			? preferredPosition
+			: sourceHandlePositions[0];
+
+	return sourceHandlePositions.reduce((best, candidate) => {
+		return getTotalDistance(candidate) + SWITCH_DISTANCE_MARGIN <
+			getTotalDistance(best)
+			? candidate
+			: best;
+	}, initial);
+};
 
 const resizeTextarea = (textarea: HTMLTextAreaElement) => {
 	const { maxHeight } = window.getComputedStyle(textarea);
@@ -100,8 +290,17 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const allNodes = useNodes<NumberNodeType>();
 
 	const [isEditing, setIsEditing] = useState(false);
+	const [editSessionInputs, setEditSessionInputs] = useState<string[] | null>(
+		null,
+	);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 	const fieldRef = useRef<HTMLButtonElement | null>(null);
+	const previousInputPositionsRef = useRef<
+		Record<string, TargetHandlePosition>
+	>({});
+	const previousSourcePositionRef = useRef<SourceHandlePosition>(
+		Position.Right,
+	);
 	const pointerStartRef = useRef<{
 		x: number;
 		y: number;
@@ -111,6 +310,90 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 		top: number;
 		left: number;
 	} | null>(null);
+
+	const visibleInputs = useMemo(() => {
+		const sortInputFirst = (names: string[]) => {
+			if (!names.includes("input")) {
+				return names;
+			}
+			return ["input", ...names.filter((name) => name !== "input")];
+		};
+
+		if (!editSessionInputs) {
+			return sortInputFirst(inputs);
+		}
+		const nextInputs = new Set([...editSessionInputs, ...inputs]);
+		return sortInputFirst([...nextInputs]);
+	}, [editSessionInputs, inputs]);
+	const visibleInputKey = visibleInputs.join("\u0000");
+	const currentNode = useMemo(
+		() => allNodes.find((node) => node.id === nodeId),
+		[allNodes, nodeId],
+	);
+	const inputPositions = useMemo(() => {
+		const positions: Record<string, Position.Left | Position.Top> = {};
+		if (!currentNode || !nodeId) {
+			return positions;
+		}
+
+		for (const inputName of visibleInputs) {
+			if (!isCompactInputName(inputName)) {
+				positions[inputName] = Position.Left;
+				continue;
+			}
+
+			const edge = allEdges.find(
+				(edge) => edge.target === nodeId && edge.targetHandle === inputName,
+			);
+			const sourceNode = allNodes.find((node) => node.id === edge?.source);
+			if (!sourceNode) {
+				positions[inputName] = Position.Left;
+				continue;
+			}
+
+			const sourcePosition = getBestSourcePosition(
+				sourceNode,
+				allEdges,
+				allNodes,
+			);
+			positions[inputName] = getBestTargetPosition(
+				sourceNode,
+				sourcePosition,
+				currentNode,
+				inputName,
+				previousInputPositionsRef.current[inputName],
+			);
+		}
+
+		return positions;
+	}, [allEdges, allNodes, currentNode, nodeId, visibleInputs]);
+	const topInputs = visibleInputs.filter(
+		(name) => inputPositions[name] === Position.Top,
+	);
+	const leftInputs = visibleInputs.filter(
+		(name) => inputPositions[name] !== Position.Top,
+	);
+	const sourcePosition = useMemo(() => {
+		if (!currentNode || !nodeId) {
+			return Position.Right;
+		}
+
+		return getBestSourcePosition(
+			currentNode,
+			allEdges,
+			allNodes,
+			previousSourcePositionRef.current,
+		);
+	}, [allEdges, allNodes, currentNode, nodeId]);
+	const handlePositionKey = [
+		...visibleInputs.map((name) => `${name}:${inputPositions[name]}`),
+		`out:${sourcePosition}`,
+	].join("\u0000");
+
+	useEffect(() => {
+		previousInputPositionsRef.current = inputPositions;
+		previousSourcePositionRef.current = sourcePosition;
+	}, [inputPositions, sourcePosition]);
 
 	const nextValue = useMemo(() => {
 		if (!nodeId) return null as number | null;
@@ -156,7 +439,13 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	useEffect(() => {
 		if (!nodeId) return;
 
+		void visibleInputKey;
+		void handlePositionKey;
 		updateNodeInternals(nodeId);
+	}, [handlePositionKey, nodeId, updateNodeInternals, visibleInputKey]);
+
+	useEffect(() => {
+		if (!nodeId || isEditing) return;
 
 		const validHandles = new Set(inputs);
 		setEdges((prev) =>
@@ -166,7 +455,8 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				return validHandles.has(edge.targetHandle);
 			}),
 		);
-	}, [inputs, nodeId, setEdges, updateNodeInternals]);
+		setEditSessionInputs(null);
+	}, [inputs, isEditing, nodeId, setEdges]);
 
 	const handleChange = ({
 		currentTarget,
@@ -194,6 +484,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			top: rect.bottom + 8,
 			left: rect.left + rect.width / 2,
 		});
+		setEditSessionInputs(inputs);
 		setIsEditing(true);
 	};
 
@@ -258,11 +549,49 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			column
 			center
 			css={{
+				background: "$white",
+				position: "relative",
 				border: "solid $border-default",
 				borderWidth: "$thin",
 				borderRadius: "$basic",
 			}}
 		>
+			{topInputs.length > 0 && (
+				<>
+					<HandleSizerRail aria-hidden="true">
+						{topInputs.map((name) =>
+							name === "input" ? (
+								<DotHandleSizer key={name} />
+							) : (
+								<HandleLabelSizer key={name}>
+									<StyledText color="inverse">{name}</StyledText>
+								</HandleLabelSizer>
+							),
+						)}
+					</HandleSizerRail>
+					<TopHandleRail>
+						{topInputs.map((name) =>
+							name === "input" ? (
+								<DotHandle
+									key={name}
+									type="target"
+									id={name}
+									position={Position.Top}
+								/>
+							) : (
+								<LocalHandle
+									key={name}
+									type="target"
+									id={name}
+									label={name}
+									position={Position.Top}
+								/>
+							),
+						)}
+					</TopHandleRail>
+				</>
+			)}
+
 			{name && (
 				<Box
 					center
@@ -289,22 +618,40 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 					css={{
 						gap: "$xs",
 						alignItems: "flex-start",
-						marginLeft: inputs.length > 0 ? "-$sm" : "0",
+						flex: "0 0 auto",
+						marginLeft: leftInputs.length > 0 ? "-$sm" : "0",
 					}}
 				>
-					{inputs.map((name) => (
-						<LocalHandle
-							key={name}
-							type="target"
-							id={name}
-							label={name}
-							position={Position.Left}
-						/>
-					))}
+					{leftInputs.map((name) =>
+						name === "input" ? (
+							<DotHandleRow
+								key={name}
+								css={{
+									marginLeft:
+										leftInputs.length > 0 ? "calc($sm - 3px)" : "-3px",
+								}}
+							>
+								<DotHandle type="target" id={name} position={Position.Left} />
+							</DotHandleRow>
+						) : (
+							<LocalHandle
+								key={name}
+								type="target"
+								id={name}
+								label={name}
+								position={Position.Left}
+							/>
+						),
+					)}
 				</Box>
 
 				<Box
-					css={{ width: "100%", position: "relative", paddingInline: "$xs" }}
+					css={{
+						flex: 1,
+						minWidth: 0,
+						position: "relative",
+						paddingInline: "$sm",
+					}}
 				>
 					<StyledField
 						ref={fieldRef}
@@ -349,15 +696,15 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 							</ExpressionPopup>,
 							document.body,
 						)}
-
-					<Handle
-						type="source"
-						id={outHandleId}
-						position={Position.Right}
-						style={{ zIndex: 2 }}
-					/>
 				</Box>
 			</Box>
+
+			<Handle
+				type="source"
+				id={outHandleId}
+				position={sourcePosition}
+				style={{ zIndex: 2 }}
+			/>
 		</Box>
 	);
 };
