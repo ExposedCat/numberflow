@@ -88,34 +88,9 @@ const TopHandleRail = styled("div", {
 	transform: "translate(-50%, -50%)",
 });
 
-const HandleSizerRail = styled("div", {
-	display: "flex",
-	gap: "$xs",
-	alignItems: "center",
+const TopLabelClearance = styled("div", {
 	height: "0.75rem",
-	overflow: "visible",
-	paddingInline: "$xs",
-	visibility: "hidden",
 	pointerEvents: "none",
-});
-
-const HandleLabelSizer = styled("span", {
-	display: "inline-flex",
-	background: "black",
-	color: "white",
-	border: "none",
-	borderRadius: "0.5rem",
-	padding: "1px 4px",
-});
-
-const DotHandleSizer = styled("span", {
-	display: "inline-flex",
-	width: "6px",
-	height: "6px",
-	minWidth: "6px",
-	minHeight: "6px",
-	border: "1px solid transparent",
-	borderRadius: "50%",
 });
 
 const ExpressionPopup = styled(PopupContent, {
@@ -131,8 +106,6 @@ const isCompactInputName = (name: string) =>
 type SourceHandlePosition = Position.Bottom | Position.Right;
 type TargetHandlePosition = Position.Left | Position.Top;
 
-const SWITCH_DISTANCE_MARGIN = 5;
-
 const sourceHandlePositions = [
 	Position.Bottom,
 	Position.Right,
@@ -142,15 +115,17 @@ const compactTargetHandlePositions = [
 	Position.Left,
 ] as const satisfies readonly TargetHandlePosition[];
 
+const VIRTUAL_HANDLE_SPACE = 12;
+
 const getNodeRect = (node: NumberNodeType) => {
 	const width = node.measured?.width ?? node.width ?? 0;
 	const height = node.measured?.height ?? node.height ?? 0;
 
 	return {
-		x: node.position.x,
-		y: node.position.y,
-		width,
-		height,
+		x: node.position.x - VIRTUAL_HANDLE_SPACE,
+		y: node.position.y - VIRTUAL_HANDLE_SPACE,
+		width: width + VIRTUAL_HANDLE_SPACE * 2,
+		height: height + VIRTUAL_HANDLE_SPACE * 2,
 	};
 };
 
@@ -195,13 +170,8 @@ const getBestTargetPosition = (
 	sourcePosition: SourceHandlePosition,
 	targetNode: NumberNodeType,
 	targetHandle: string | null | undefined,
-	preferredPosition?: TargetHandlePosition,
 ) => {
 	const candidates = getTargetHandlePositions(targetHandle);
-	const initial =
-		preferredPosition && candidates.includes(preferredPosition)
-			? preferredPosition
-			: candidates[0];
 
 	return candidates.reduce((best, candidate) => {
 		const bestDistance = getDistance(
@@ -216,17 +186,14 @@ const getBestTargetPosition = (
 			targetNode,
 			candidate,
 		);
-		return candidateDistance + SWITCH_DISTANCE_MARGIN < bestDistance
-			? candidate
-			: best;
-	}, initial);
+		return candidateDistance < bestDistance ? candidate : best;
+	}, candidates[0]);
 };
 
 const getBestSourcePosition = (
 	sourceNode: NumberNodeType,
 	allEdges: WeightedEdgeType[],
 	allNodes: NumberNodeType[],
-	preferredPosition?: SourceHandlePosition,
 ) => {
 	const outgoingEdges = allEdges.filter(
 		(edge) => edge.source === sourceNode.id,
@@ -253,17 +220,11 @@ const getBestSourcePosition = (
 			);
 		}, 0);
 
-	const initial =
-		preferredPosition && sourceHandlePositions.includes(preferredPosition)
-			? preferredPosition
-			: sourceHandlePositions[0];
-
 	return sourceHandlePositions.reduce((best, candidate) => {
-		return getTotalDistance(candidate) + SWITCH_DISTANCE_MARGIN <
-			getTotalDistance(best)
+		return getTotalDistance(candidate) < getTotalDistance(best)
 			? candidate
 			: best;
-	}, initial);
+	}, sourceHandlePositions[0]);
 };
 
 const resizeTextarea = (textarea: HTMLTextAreaElement) => {
@@ -295,12 +256,6 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 	const fieldRef = useRef<HTMLButtonElement | null>(null);
-	const previousInputPositionsRef = useRef<
-		Record<string, TargetHandlePosition>
-	>({});
-	const previousSourcePositionRef = useRef<SourceHandlePosition>(
-		Position.Right,
-	);
 	const pointerStartRef = useRef<{
 		x: number;
 		y: number;
@@ -326,6 +281,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 		return sortInputFirst([...nextInputs]);
 	}, [editSessionInputs, inputs]);
 	const visibleInputKey = visibleInputs.join("\u0000");
+	const compactInputs = visibleInputs.filter(isCompactInputName);
 	const currentNode = useMemo(
 		() => allNodes.find((node) => node.id === nodeId),
 		[allNodes, nodeId],
@@ -361,7 +317,6 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				sourcePosition,
 				currentNode,
 				inputName,
-				previousInputPositionsRef.current[inputName],
 			);
 		}
 
@@ -373,27 +328,21 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const leftInputs = visibleInputs.filter(
 		(name) => inputPositions[name] !== Position.Top,
 	);
+	const hasLeftColumnSpace = leftInputs.length > 0;
+	const hasTopLabel = topInputs.some((name) => name !== "input");
+	const hasVisibleLeftLabel = leftInputs.some((name) => name !== "input");
+	const needsTopLabelClearance = hasTopLabel && !hasVisibleLeftLabel;
 	const sourcePosition = useMemo(() => {
 		if (!currentNode || !nodeId) {
 			return Position.Right;
 		}
 
-		return getBestSourcePosition(
-			currentNode,
-			allEdges,
-			allNodes,
-			previousSourcePositionRef.current,
-		);
+		return getBestSourcePosition(currentNode, allEdges, allNodes);
 	}, [allEdges, allNodes, currentNode, nodeId]);
 	const handlePositionKey = [
 		...visibleInputs.map((name) => `${name}:${inputPositions[name]}`),
 		`out:${sourcePosition}`,
 	].join("\u0000");
-
-	useEffect(() => {
-		previousInputPositionsRef.current = inputPositions;
-		previousSourcePositionRef.current = sourcePosition;
-	}, [inputPositions, sourcePosition]);
 
 	const nextValue = useMemo(() => {
 		if (!nodeId) return null as number | null;
@@ -556,41 +505,29 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				borderRadius: "$basic",
 			}}
 		>
-			{topInputs.length > 0 && (
-				<>
-					<HandleSizerRail aria-hidden="true">
-						{topInputs.map((name) =>
-							name === "input" ? (
-								<DotHandleSizer key={name} />
-							) : (
-								<HandleLabelSizer key={name}>
-									<StyledText color="inverse">{name}</StyledText>
-								</HandleLabelSizer>
-							),
-						)}
-					</HandleSizerRail>
-					<TopHandleRail>
-						{topInputs.map((name) =>
-							name === "input" ? (
-								<DotHandle
-									key={name}
-									type="target"
-									id={name}
-									position={Position.Top}
-								/>
-							) : (
-								<LocalHandle
-									key={name}
-									type="target"
-									id={name}
-									label={name}
-									position={Position.Top}
-								/>
-							),
-						)}
-					</TopHandleRail>
-				</>
+			{compactInputs.length > 0 && (
+				<TopHandleRail>
+					{topInputs.map((name) =>
+						name === "input" ? (
+							<DotHandle
+								key={name}
+								type="target"
+								id={name}
+								position={Position.Top}
+							/>
+						) : (
+							<LocalHandle
+								key={name}
+								type="target"
+								id={name}
+								label={name}
+								position={Position.Top}
+							/>
+						),
+					)}
+				</TopHandleRail>
 			)}
+			{needsTopLabelClearance && <TopLabelClearance aria-hidden="true" />}
 
 			{name && (
 				<Box
@@ -619,7 +556,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 						gap: "$xs",
 						alignItems: "flex-start",
 						flex: "0 0 auto",
-						marginLeft: leftInputs.length > 0 ? "-$sm" : "0",
+						marginLeft: hasLeftColumnSpace ? "-$sm" : "0",
 					}}
 				>
 					{leftInputs.map((name) =>
@@ -627,8 +564,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 							<DotHandleRow
 								key={name}
 								css={{
-									marginLeft:
-										leftInputs.length > 0 ? "calc($sm - 3px)" : "-3px",
+									marginLeft: hasLeftColumnSpace ? "calc($sm - 3px)" : "-3px",
 								}}
 							>
 								<DotHandle type="target" id={name} position={Position.Left} />
