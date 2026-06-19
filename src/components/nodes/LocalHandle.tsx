@@ -22,6 +22,7 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 }) => {
 	const nodeId = useNodeId();
 	const { setEdges } = useReactFlow();
+	const isCircle = label.length <= 1;
 
 	const onContextMenu: React.MouseEventHandler = (event) => {
 		event.preventDefault();
@@ -47,21 +48,33 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 				display: "inline-flex",
 				alignItems: "center",
 				justifyContent: "center",
-				width: "auto",
-				height: "auto",
-				minWidth: 0,
-				minHeight: 0,
+				width: isCircle ? "1.05rem" : "auto",
+				height: "1.05rem",
+				minWidth: "1.05rem",
+				minHeight: "1.05rem",
 				background: "black",
 				color: "white",
 				border: "none",
-				borderRadius: "0.5rem",
-				padding: "1px 4px",
+				borderRadius: "999px",
+				padding: isCircle ? 0 : "0 0.14rem",
 				transform: "none",
 				...style,
 			}}
 			onContextMenu={onContextMenu}
 		>
-			<StyledText color="inverse" css={{ pointerEvents: "none" }}>
+			<StyledText
+				color="inverse"
+				css={{
+					alignItems: "center",
+					display: "inline-flex",
+					fontSize: "0.72rem",
+					fontWeight: "$semibold",
+					height: "100%",
+					justifyContent: "center",
+					lineHeight: 1,
+					pointerEvents: "none",
+				}}
+			>
 				{label}
 			</StyledText>
 		</Handle>

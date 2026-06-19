@@ -154,17 +154,17 @@ export const Root: FC = () => {
 				</Panel>
 				<Background
 					id="fine-grid"
-					color="#e5e7eb"
+					color="#94a3b8"
 					gap={20}
-					lineWidth={1}
-					variant={BackgroundVariant.Lines}
+					size={1.3}
+					variant={BackgroundVariant.Dots}
 				/>
 				<Background
 					id="major-grid"
-					color="#cbd5e1"
+					color="#94a3b8"
 					gap={100}
-					lineWidth={1}
-					variant={BackgroundVariant.Lines}
+					size={1.3}
+					variant={BackgroundVariant.Dots}
 				/>
 			</ReactFlow>
 		</Box>

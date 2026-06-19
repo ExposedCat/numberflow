@@ -117,6 +117,37 @@ const compactTargetHandlePositions = [
 
 const VIRTUAL_HANDLE_SPACE = 12;
 
+type NumberNodeKind = "input" | "processor" | "output";
+
+const NODE_STYLE_BY_KIND = {
+	input: {
+		background: "#ecfdf5",
+		border: "#059669",
+		handle: "#047857",
+		shadow: "rgba(5, 150, 105, 0.16)",
+	},
+	processor: {
+		background: "#eff6ff",
+		border: "#2563eb",
+		handle: "#1d4ed8",
+		shadow: "rgba(37, 99, 235, 0.16)",
+	},
+	output: {
+		background: "#fff7ed",
+		border: "#ea580c",
+		handle: "#c2410c",
+		shadow: "rgba(234, 88, 12, 0.16)",
+	},
+} satisfies Record<
+	NumberNodeKind,
+	{
+		background: string;
+		border: string;
+		handle: string;
+		shadow: string;
+	}
+>;
+
 const getNodeRect = (node: NumberNodeType) => {
 	const width = node.measured?.width ?? node.width ?? 0;
 	const height = node.measured?.height ?? node.height ?? 0;
@@ -282,6 +313,14 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	}, [editSessionInputs, inputs]);
 	const visibleInputKey = visibleInputs.join("\u0000");
 	const compactInputs = visibleInputs.filter(isCompactInputName);
+	const hasOutgoingEdges = allEdges.some((edge) => edge.source === nodeId);
+	const nodeKind: NumberNodeKind =
+		inputs.length === 0 ? "input" : hasOutgoingEdges ? "processor" : "output";
+	const nodeStyle = NODE_STYLE_BY_KIND[nodeKind];
+	const handleStyle = {
+		background: nodeStyle.handle,
+		border: `1px solid ${nodeStyle.border}`,
+	};
 	const currentNode = useMemo(
 		() => allNodes.find((node) => node.id === nodeId),
 		[allNodes, nodeId],
@@ -498,11 +537,11 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			column
 			center
 			css={{
-				background: "$white",
+				background: nodeStyle.background,
 				position: "relative",
-				border: "solid $border-default",
-				borderWidth: "$thin",
+				border: `1px solid ${nodeStyle.border}`,
 				borderRadius: "$basic",
+				boxShadow: `0 0.35rem 1rem ${nodeStyle.shadow}`,
 			}}
 		>
 			{compactInputs.length > 0 && (
@@ -514,6 +553,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 								type="target"
 								id={name}
 								position={Position.Top}
+								style={handleStyle}
 							/>
 						) : (
 							<LocalHandle
@@ -522,6 +562,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 								id={name}
 								label={name}
 								position={Position.Top}
+								style={handleStyle}
 							/>
 						),
 					)}
@@ -534,8 +575,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 					center
 					css={{
 						width: "100%",
-						borderBottom: "solid $border-default",
-						borderWidth: "$thin",
+						borderBottom: `1px solid ${nodeStyle.border}`,
 					}}
 				>
 					<StyledText>{name}</StyledText>
@@ -567,7 +607,12 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 									marginLeft: hasLeftColumnSpace ? "calc($sm - 3px)" : "-3px",
 								}}
 							>
-								<DotHandle type="target" id={name} position={Position.Left} />
+								<DotHandle
+									type="target"
+									id={name}
+									position={Position.Left}
+									style={handleStyle}
+								/>
 							</DotHandleRow>
 						) : (
 							<LocalHandle
@@ -576,6 +621,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 								id={name}
 								label={name}
 								position={Position.Left}
+								style={handleStyle}
 							/>
 						),
 					)}
@@ -639,7 +685,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				type="source"
 				id={outHandleId}
 				position={sourcePosition}
-				style={{ zIndex: 2 }}
+				style={{ zIndex: 2, ...handleStyle }}
 			/>
 		</Box>
 	);
