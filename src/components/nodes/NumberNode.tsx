@@ -10,7 +10,14 @@ import {
 	useUpdateNodeInternals,
 } from "@xyflow/react";
 import type { ChangeEvent, FC, KeyboardEvent, PointerEvent } from "react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+	useEffect,
+	useId,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { styled } from "@/theme";
 import { compute, evaluate } from "@/utils/math";
@@ -88,11 +95,6 @@ const TopHandleRail = styled("div", {
 	transform: "translate(-50%, -50%)",
 });
 
-const TopLabelClearance = styled("div", {
-	height: "0.75rem",
-	pointerEvents: "none",
-});
-
 const ExpressionPopup = styled(PopupContent, {
 	position: "fixed",
 	width: "min(28rem, calc(100vw - 2rem))",
@@ -116,27 +118,50 @@ const compactTargetHandlePositions = [
 ] as const satisfies readonly TargetHandlePosition[];
 
 const VIRTUAL_HANDLE_SPACE = 12;
+const ROOT_FONT_SIZE = 16;
+const SPACE_XS = ROOT_FONT_SIZE * 0.25;
+const SPACE_SM = ROOT_FONT_SIZE * 0.5;
+const BORDER_WIDTH = 1;
+const TOP_LABEL_CLEARANCE_HEIGHT = ROOT_FONT_SIZE * 0.2;
+const DOT_HANDLE_ROW_WIDTH = 6;
+const DOT_HANDLE_LEFT_MARGIN = SPACE_SM - 3;
+const DOT_HANDLE_ROW_HEIGHT = ROOT_FONT_SIZE * 1.35;
+const LOCAL_HANDLE_MIN_WIDTH = ROOT_FONT_SIZE * 1.05;
+const LOCAL_HANDLE_HEIGHT = ROOT_FONT_SIZE * 1.05;
+const LOCAL_HANDLE_INLINE_PADDING = ROOT_FONT_SIZE * 0.14 * 2;
+const LOCAL_HANDLE_FONT_SIZE = ROOT_FONT_SIZE * 0.72;
+const LOCAL_HANDLE_FONT_WEIGHT = 600;
+const NORMAL_TEXT_FONT_SIZE = ROOT_FONT_SIZE;
+const NORMAL_TEXT_FONT_WEIGHT = 400;
+const NORMAL_TEXT_LINE_HEIGHT = ROOT_FONT_SIZE * 1.2;
+
+let textMeasureContext: CanvasRenderingContext2D | null | undefined;
+
+const TopLabelClearance = styled("div", {
+	height: `${TOP_LABEL_CLEARANCE_HEIGHT}px`,
+	pointerEvents: "none",
+});
 
 type NumberNodeKind = "input" | "processor" | "output";
 
 const NODE_STYLE_BY_KIND = {
 	input: {
-		background: "#ecfdf5",
-		border: "#059669",
-		handle: "#047857",
-		shadow: "rgba(5, 150, 105, 0.16)",
+		background: "#ffe4f1",
+		border: "#FF499E",
+		handle: "#c91d6f",
+		shadow: "rgba(255, 73, 158, 0.2)",
 	},
 	processor: {
-		background: "#eff6ff",
-		border: "#2563eb",
-		handle: "#1d4ed8",
-		shadow: "rgba(37, 99, 235, 0.16)",
+		background: "#fff6d6",
+		border: "#FED766",
+		handle: "#b78d00",
+		shadow: "rgba(254, 215, 102, 0.24)",
 	},
 	output: {
-		background: "#fff7ed",
-		border: "#ea580c",
-		handle: "#c2410c",
-		shadow: "rgba(234, 88, 12, 0.16)",
+		background: "#d9f7fb",
+		border: "#009FB7",
+		handle: "#006f80",
+		shadow: "rgba(0, 159, 183, 0.2)",
 	},
 } satisfies Record<
 	NumberNodeKind,
@@ -148,9 +173,13 @@ const NODE_STYLE_BY_KIND = {
 	}
 >;
 
-const getNodeRect = (node: NumberNodeType) => {
-	const width = node.measured?.width ?? node.width ?? 0;
-	const height = node.measured?.height ?? node.height ?? 0;
+type NodeSize = {
+	width: number;
+	height: number;
+};
+
+const getNodeRect = (node: NumberNodeType, size = getNumberNodeSize(node)) => {
+	const { width, height } = size;
 
 	return {
 		x: node.position.x - VIRTUAL_HANDLE_SPACE,
@@ -163,8 +192,9 @@ const getNodeRect = (node: NumberNodeType) => {
 const getHandlePoint = (
 	node: NumberNodeType,
 	position: SourceHandlePosition | TargetHandlePosition,
+	size?: NodeSize,
 ) => {
-	const { x, y, width, height } = getNodeRect(node);
+	const { x, y, width, height } = getNodeRect(node, size);
 
 	switch (position) {
 		case Position.Top:
@@ -183,9 +213,11 @@ const getDistance = (
 	sourcePosition: SourceHandlePosition,
 	targetNode: NumberNodeType,
 	targetPosition: TargetHandlePosition,
+	sourceSize?: NodeSize,
+	targetSize?: NodeSize,
 ) => {
-	const source = getHandlePoint(sourceNode, sourcePosition);
-	const target = getHandlePoint(targetNode, targetPosition);
+	const source = getHandlePoint(sourceNode, sourcePosition, sourceSize);
+	const target = getHandlePoint(targetNode, targetPosition, targetSize);
 	return Math.hypot(target.x - source.x, target.y - source.y);
 };
 
@@ -196,41 +228,205 @@ const getTargetHandlePositions = (
 		? compactTargetHandlePositions
 		: ([Position.Left] as TargetHandlePosition[]);
 
+const getCanvasTextWidth = (
+	text: string,
+	fontSize: number,
+	fontWeight: number,
+) => {
+	if (typeof document !== "undefined") {
+		if (textMeasureContext === undefined) {
+			textMeasureContext = document.createElement("canvas").getContext("2d");
+		}
+		if (textMeasureContext) {
+			const fontFamily =
+				window.getComputedStyle(document.body).fontFamily || "sans-serif";
+			textMeasureContext.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+			return textMeasureContext.measureText(text).width;
+		}
+	}
+
+	return text.length * fontSize * 0.6;
+};
+
+const measureCompactHandleWidth = (name: string) => {
+	if (name === "input") {
+		return DOT_HANDLE_ROW_WIDTH + DOT_HANDLE_LEFT_MARGIN;
+	}
+	if (name.length <= 1) {
+		return LOCAL_HANDLE_MIN_WIDTH;
+	}
+	return Math.max(
+		LOCAL_HANDLE_MIN_WIDTH,
+		getCanvasTextWidth(
+			name.toUpperCase(),
+			LOCAL_HANDLE_FONT_SIZE,
+			LOCAL_HANDLE_FONT_WEIGHT,
+		) + LOCAL_HANDLE_INLINE_PADDING,
+	);
+};
+
+const getLeftColumnWidth = (leftInputs: string[]): number =>
+	leftInputs.length > 0
+		? Math.max(...leftInputs.map(measureCompactHandleWidth)) - SPACE_SM
+		: 0;
+
+const getLeftColumnHeight = (leftInputs: string[]) =>
+	leftInputs.reduce((height, inputName, index) => {
+		const rowHeight =
+			inputName === "input" ? DOT_HANDLE_ROW_HEIGHT : LOCAL_HANDLE_HEIGHT;
+		return height + rowHeight + (index > 0 ? SPACE_XS : 0);
+	}, 0);
+
+const getValueText = (node: NumberNodeType) =>
+	String(node.data.computedValue ?? "NULL");
+
+const getCompleteInputPositions = (
+	inputs: string[],
+	positions: Partial<Record<string, TargetHandlePosition>>,
+) =>
+	Object.fromEntries(
+		inputs.map((input) => [
+			input,
+			isCompactInputName(input)
+				? (positions[input] ?? Position.Left)
+				: Position.Left,
+		]),
+	) as Record<string, TargetHandlePosition>;
+
+type CommittedNodeLayout = {
+	incomingSourcePositions: Partial<Record<string, SourceHandlePosition>>;
+	inputPositions: Record<string, TargetHandlePosition>;
+	sourcePosition: SourceHandlePosition;
+};
+
+const committedNodeLayouts = new Map<string, CommittedNodeLayout>();
+
+const getCommittedInputPositions = (node: NumberNodeType) =>
+	getCompleteInputPositions(
+		node.data.inputs,
+		committedNodeLayouts.get(node.id)?.inputPositions ?? {},
+	);
+
+const getInputPositionsWithTarget = (
+	node: NumberNodeType,
+	targetHandle: string | null | undefined,
+	targetPosition: TargetHandlePosition,
+) => ({
+	...getCommittedInputPositions(node),
+	...(targetHandle ? { [targetHandle]: targetPosition } : {}),
+});
+
+const getNumberNodeSize = (
+	node: NumberNodeType,
+	inputs = node.data.inputs,
+	positions = getCompleteInputPositions(inputs, {}),
+): NodeSize => {
+	const completePositions = getCompleteInputPositions(inputs, positions);
+	const leftInputs = inputs.filter(
+		(name) => completePositions[name] !== Position.Top,
+	);
+	const topInputs = inputs.filter(
+		(name) => completePositions[name] === Position.Top,
+	);
+	const hasTopLabel = topInputs.some((name) => name !== "input");
+	const hasVisibleLeftLabel = leftInputs.some((name) => name !== "input");
+	const topClearanceHeight =
+		hasTopLabel && !hasVisibleLeftLabel ? TOP_LABEL_CLEARANCE_HEIGHT : 0;
+	const leftColumnWidth = getLeftColumnWidth(leftInputs);
+	const leftColumnHeight = getLeftColumnHeight(leftInputs);
+	const valueWidth = getCanvasTextWidth(
+		getValueText(node),
+		NORMAL_TEXT_FONT_SIZE,
+		NORMAL_TEXT_FONT_WEIGHT,
+	);
+	const nameWidth = node.data.name
+		? getCanvasTextWidth(
+				node.data.name.toUpperCase(),
+				NORMAL_TEXT_FONT_SIZE,
+				NORMAL_TEXT_FONT_WEIGHT,
+			)
+		: 0;
+	const nameHeight = node.data.name
+		? NORMAL_TEXT_LINE_HEIGHT + BORDER_WIDTH
+		: 0;
+	const bodyWidth = leftColumnWidth + valueWidth + SPACE_SM * 2;
+	const bodyHeight =
+		Math.max(leftColumnHeight, NORMAL_TEXT_LINE_HEIGHT) + SPACE_XS * 2;
+
+	return {
+		width: Math.ceil(Math.max(bodyWidth, nameWidth) + BORDER_WIDTH * 2),
+		height: Math.ceil(
+			topClearanceHeight + nameHeight + bodyHeight + BORDER_WIDTH * 2,
+		),
+	};
+};
+
+const pickShorterPosition = <
+	T extends SourceHandlePosition | TargetHandlePosition,
+>(
+	candidates: readonly T[],
+	getScore: (position: T) => number,
+	previous: T | undefined,
+) => {
+	const initial =
+		previous && candidates.includes(previous) ? previous : candidates[0];
+
+	return candidates.reduce(
+		(best, candidate) =>
+			getScore(candidate) < getScore(best) ? candidate : best,
+		initial,
+	);
+};
+
 const getBestTargetPosition = (
 	sourceNode: NumberNodeType,
 	sourcePosition: SourceHandlePosition,
 	targetNode: NumberNodeType,
 	targetHandle: string | null | undefined,
+	previousPosition?: TargetHandlePosition,
+	getTargetSize?: (position: TargetHandlePosition) => NodeSize,
 ) => {
 	const candidates = getTargetHandlePositions(targetHandle);
 
-	return candidates.reduce((best, candidate) => {
-		const bestDistance = getDistance(
-			sourceNode,
-			sourcePosition,
-			targetNode,
-			best,
-		);
-		const candidateDistance = getDistance(
-			sourceNode,
-			sourcePosition,
-			targetNode,
-			candidate,
-		);
-		return candidateDistance < bestDistance ? candidate : best;
-	}, candidates[0]);
+	return pickShorterPosition(
+		candidates,
+		(candidate) => {
+			const targetSize =
+				getTargetSize?.(candidate) ??
+				getNumberNodeSize(
+					targetNode,
+					targetNode.data.inputs,
+					getInputPositionsWithTarget(targetNode, targetHandle, candidate),
+				);
+			return getDistance(
+				sourceNode,
+				sourcePosition,
+				targetNode,
+				candidate,
+				undefined,
+				targetSize,
+			);
+		},
+		previousPosition,
+	);
 };
 
 const getBestSourcePosition = (
 	sourceNode: NumberNodeType,
 	allEdges: WeightedEdgeType[],
 	allNodes: NumberNodeType[],
+	previousPosition?: SourceHandlePosition,
+	sourceSize = getNumberNodeSize(
+		sourceNode,
+		sourceNode.data.inputs,
+		getCommittedInputPositions(sourceNode),
+	),
 ) => {
 	const outgoingEdges = allEdges.filter(
 		(edge) => edge.source === sourceNode.id,
 	);
 	if (outgoingEdges.length === 0) {
-		return Position.Right;
+		return previousPosition ?? Position.Right;
 	}
 
 	const getTotalDistance = (sourcePosition: SourceHandlePosition) =>
@@ -244,18 +440,34 @@ const getBestSourcePosition = (
 				targetNode,
 				edge.targetHandle,
 			);
+			const targetSize = getNumberNodeSize(
+				targetNode,
+				targetNode.data.inputs,
+				getInputPositionsWithTarget(
+					targetNode,
+					edge.targetHandle,
+					targetPosition,
+				),
+			);
 
 			return (
 				total +
-				getDistance(sourceNode, sourcePosition, targetNode, targetPosition)
+				getDistance(
+					sourceNode,
+					sourcePosition,
+					targetNode,
+					targetPosition,
+					sourceSize,
+					targetSize,
+				)
 			);
 		}, 0);
 
-	return sourceHandlePositions.reduce((best, candidate) => {
-		return getTotalDistance(candidate) < getTotalDistance(best)
-			? candidate
-			: best;
-	}, sourceHandlePositions[0]);
+	return pickShorterPosition(
+		sourceHandlePositions,
+		getTotalDistance,
+		previousPosition,
+	);
 };
 
 const resizeTextarea = (textarea: HTMLTextAreaElement) => {
@@ -292,6 +504,15 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 		y: number;
 		moved: boolean;
 	} | null>(null);
+	const committedInputPositionsRef = useRef<
+		Partial<Record<string, TargetHandlePosition>>
+	>({});
+	const committedIncomingSourcePositionsRef = useRef<
+		Partial<Record<string, SourceHandlePosition>>
+	>({});
+	const committedSourcePositionRef = useRef<SourceHandlePosition>(
+		Position.Right,
+	);
 	const [popupPosition, setPopupPosition] = useState<{
 		top: number;
 		left: number;
@@ -325,10 +546,17 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 		() => allNodes.find((node) => node.id === nodeId),
 		[allNodes, nodeId],
 	);
-	const inputPositions = useMemo(() => {
-		const positions: Record<string, Position.Left | Position.Top> = {};
+	const inputLayout = useMemo(() => {
+		const previousInputPositions = getCompleteInputPositions(
+			visibleInputs,
+			committedInputPositionsRef.current,
+		);
+		const positions = { ...previousInputPositions };
+		const incomingSourcePositions: Partial<
+			Record<string, SourceHandlePosition>
+		> = {};
 		if (!currentNode || !nodeId) {
-			return positions;
+			return { incomingSourcePositions, positions };
 		}
 
 		for (const inputName of visibleInputs) {
@@ -340,7 +568,12 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			const edge = allEdges.find(
 				(edge) => edge.target === nodeId && edge.targetHandle === inputName,
 			);
-			const sourceNode = allNodes.find((node) => node.id === edge?.source);
+			if (!edge) {
+				positions[inputName] = Position.Left;
+				continue;
+			}
+
+			const sourceNode = allNodes.find((node) => node.id === edge.source);
 			if (!sourceNode) {
 				positions[inputName] = Position.Left;
 				continue;
@@ -350,17 +583,40 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				sourceNode,
 				allEdges,
 				allNodes,
+				committedIncomingSourcePositionsRef.current[edge.id],
 			);
+			incomingSourcePositions[edge.id] = sourcePosition;
 			positions[inputName] = getBestTargetPosition(
 				sourceNode,
 				sourcePosition,
 				currentNode,
 				inputName,
+				positions[inputName],
+				(candidatePosition) =>
+					getNumberNodeSize(currentNode, visibleInputs, {
+						...positions,
+						[inputName]: candidatePosition,
+					}),
 			);
 		}
 
-		return positions;
+		return { incomingSourcePositions, positions };
 	}, [allEdges, allNodes, currentNode, nodeId, visibleInputs]);
+	const inputPositions = inputLayout.positions;
+	const renderedNode = useMemo(
+		() =>
+			currentNode ??
+			({
+				id: nodeId ?? "",
+				position: { x: 0, y: 0 },
+				data: { name, expression, inputs, computedValue },
+			} as NumberNodeType),
+		[currentNode, nodeId, name, expression, inputs, computedValue],
+	);
+	const nodeSize = useMemo(
+		() => getNumberNodeSize(renderedNode, visibleInputs, inputPositions),
+		[renderedNode, inputPositions, visibleInputs],
+	);
 	const topInputs = visibleInputs.filter(
 		(name) => inputPositions[name] === Position.Top,
 	);
@@ -376,11 +632,39 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			return Position.Right;
 		}
 
-		return getBestSourcePosition(currentNode, allEdges, allNodes);
-	}, [allEdges, allNodes, currentNode, nodeId]);
+		return getBestSourcePosition(
+			currentNode,
+			allEdges,
+			allNodes,
+			committedSourcePositionRef.current,
+			nodeSize,
+		);
+	}, [allEdges, allNodes, currentNode, nodeId, nodeSize]);
+	useLayoutEffect(() => {
+		if (!nodeId) return;
+
+		committedNodeLayouts.set(nodeId, {
+			incomingSourcePositions: inputLayout.incomingSourcePositions,
+			inputPositions,
+			sourcePosition,
+		});
+		committedInputPositionsRef.current = inputPositions;
+		committedIncomingSourcePositionsRef.current =
+			inputLayout.incomingSourcePositions;
+		committedSourcePositionRef.current = sourcePosition;
+		return () => {
+			committedNodeLayouts.delete(nodeId);
+		};
+	}, [
+		inputLayout.incomingSourcePositions,
+		inputPositions,
+		nodeId,
+		sourcePosition,
+	]);
 	const handlePositionKey = [
 		...visibleInputs.map((name) => `${name}:${inputPositions[name]}`),
 		`out:${sourcePosition}`,
+		`size:${nodeSize.width}x${nodeSize.height}`,
 	].join("\u0000");
 
 	const nextValue = useMemo(() => {
@@ -539,6 +823,8 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			css={{
 				background: nodeStyle.background,
 				position: "relative",
+				width: `${nodeSize.width}px`,
+				height: `${nodeSize.height}px`,
 				border: `1px solid ${nodeStyle.border}`,
 				borderRadius: "$basic",
 				boxShadow: `0 0.35rem 1rem ${nodeStyle.shadow}`,
@@ -560,7 +846,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 								key={name}
 								type="target"
 								id={name}
-								label={name}
+								label={name.toUpperCase()}
 								position={Position.Top}
 								style={handleStyle}
 							/>
@@ -578,14 +864,14 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 						borderBottom: `1px solid ${nodeStyle.border}`,
 					}}
 				>
-					<StyledText>{name}</StyledText>
+					<StyledText>{name.toUpperCase()}</StyledText>
 				</Box>
 			)}
 
 			<Box
 				css={{
 					width: "100%",
-					height: "100%",
+					height: "auto",
 					paddingBlock: "$xs",
 					alignItems: "stretch",
 				}}
@@ -619,7 +905,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 								key={name}
 								type="target"
 								id={name}
-								label={name}
+								label={name.toUpperCase()}
 								position={Position.Left}
 								style={handleStyle}
 							/>

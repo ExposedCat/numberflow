@@ -35,8 +35,8 @@ export const { styled, css, createTheme } = createStitches({
 			"status-warning": "#ea9e0c",
 			"status-error": "#dc2626",
 			"status-info": "#0891b2",
-			"interactive-primary": "#2563eb",
-			"interactive-primary-hover": "#1d4ed8",
+			"interactive-primary": "#0072b2",
+			"interactive-primary-hover": "#005f94",
 		},
 		space: {
 			xs: "0.25rem",
