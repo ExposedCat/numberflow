@@ -2,6 +2,8 @@
 
 Node-based calculator.
 
+[Run app online](https://exposedcat.github.io/numberflow/)
+
 ## Setup
 
 ```sh
