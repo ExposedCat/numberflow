@@ -1,8 +1,13 @@
 import {
 	addEdge,
+	applyEdgeChanges,
+	applyNodeChanges,
 	Background,
 	BackgroundVariant,
 	type Connection,
+	type EdgeChange,
+	type NodeChange,
+	type OnNodeDrag,
 	Panel,
 	ReactFlow,
 	type ReactFlowInstance,
@@ -22,6 +27,7 @@ import {
 } from "react";
 import { styled } from "@/theme";
 import { GRID_CELL_SIZE } from "@/utils/layout";
+import { loadFlowState, saveFlowState } from "@/utils/persistence";
 import { Box } from "../ui/Box";
 
 import "@xyflow/react/dist/style.css";
@@ -123,8 +129,13 @@ const snapPositionToGrid = (position: NumberNodeType["position"]) => ({
 });
 
 export const Root: FC = () => {
-	const [nodes, setNodes, onNodesChange] = useNodesState<NumberNodeType>([]);
-	const [edges, setEdges, onEdgesChange] = useEdgesState<WeightedEdgeType>([]);
+	const initialState = useMemo(() => loadFlowState(), []);
+	const [nodes, setNodes, applyNodesChange] = useNodesState<NumberNodeType>(
+		initialState.nodes,
+	);
+	const [edges, setEdges, applyEdgesChange] = useEdgesState<WeightedEdgeType>(
+		initialState.edges,
+	);
 	const [snapToGrid, setSnapToGrid] = useState(false);
 	const [actionMenu, setActionMenu] = useState<ActionMenuTarget | null>(null);
 	const fineGridId = useId();
@@ -152,9 +163,42 @@ export const Root: FC = () => {
 	);
 
 	const onConnect = useCallback(
-		(connection: Connection) =>
-			setEdges((prev) => addEdge(buildEdge(connection), prev)),
-		[buildEdge, setEdges],
+		(connection: Connection) => {
+			const nextEdges = addEdge(buildEdge(connection), edges);
+			setEdges(nextEdges);
+			saveFlowState(nodes, nextEdges);
+		},
+		[buildEdge, edges, nodes, setEdges],
+	);
+	const onNodesChange = useCallback(
+		(changes: NodeChange<NumberNodeType>[]) => {
+			applyNodesChange(changes);
+			if (!changes.some((change) => change.type === "remove")) return;
+
+			const removedNodeIds = new Set(
+				changes
+					.filter((change) => change.type === "remove")
+					.map((change) => change.id),
+			);
+			const nextNodes = applyNodeChanges(changes, nodes);
+			const nextEdges = edges.filter(
+				(edge) =>
+					!removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target),
+			);
+			setEdges(nextEdges);
+			saveFlowState(nextNodes, nextEdges);
+		},
+		[applyNodesChange, edges, nodes, setEdges],
+	);
+	const onEdgesChange = useCallback(
+		(changes: EdgeChange<WeightedEdgeType>[]) => {
+			applyEdgesChange(changes);
+			if (!changes.some((change) => change.type === "remove")) return;
+
+			const nextEdges = applyEdgeChanges(changes, edges);
+			saveFlowState(nodes, nextEdges);
+		},
+		[applyEdgesChange, edges, nodes],
 	);
 	const onPaneClick = useCallback(
 		(event: MouseEvent) => {
@@ -172,9 +216,11 @@ export const Root: FC = () => {
 
 			const id = Date.now().toString();
 			const nodePosition = snapToGrid ? snapPositionToGrid(position) : position;
-			setNodes((prev) => [...prev, createNumberNode(id, nodePosition)]);
+			const nextNodes = [...nodes, createNumberNode(id, nodePosition)];
+			setNodes(nextNodes);
+			saveFlowState(nextNodes, edges);
 		},
-		[createNumberNode, setNodes, snapToGrid],
+		[createNumberNode, edges, nodes, setNodes, snapToGrid],
 	);
 	const onEdgeClick = useCallback(
 		(event: MouseEvent, edge: WeightedEdgeType) => {
@@ -190,18 +236,41 @@ export const Root: FC = () => {
 	const removeActionMenuTarget = useCallback(() => {
 		if (!actionMenu) return;
 
-		setEdges((prev) => prev.filter((edge) => edge.id !== actionMenu.id));
+		const nextEdges = edges.filter((edge) => edge.id !== actionMenu.id);
+		setEdges(nextEdges);
+		saveFlowState(nodes, nextEdges);
 
 		setActionMenu(null);
-	}, [actionMenu, setEdges]);
+	}, [actionMenu, edges, nodes, setEdges]);
 	const snapNodesToGrid = useCallback(() => {
-		setNodes((prev) =>
-			prev.map((node) => ({
-				...node,
-				position: snapPositionToGrid(node.position),
-			})),
-		);
-	}, [setNodes]);
+		const nextNodes = nodes.map((node) => ({
+			...node,
+			position: snapPositionToGrid(node.position),
+		}));
+		setNodes(nextNodes);
+		saveFlowState(nextNodes, edges);
+	}, [edges, nodes, setNodes]);
+	const onNodeDragStop = useCallback<OnNodeDrag<NumberNodeType>>(
+		(_event, draggedNode, draggedNodes) => {
+			const draggedById = new Map(
+				[draggedNode, ...draggedNodes].map((node) => [node.id, node]),
+			);
+			const nextNodes = nodes.map((node) => {
+				const dragged = draggedById.get(node.id);
+				return dragged
+					? {
+							...node,
+							position: {
+								x: dragged.position.x,
+								y: dragged.position.y,
+							},
+						}
+					: node;
+			});
+			saveFlowState(nextNodes, edges);
+		},
+		[edges, nodes],
+	);
 	const nodeTypes = useMemo(() => ({ number: NumberNode }), []);
 	const edgeTypes = useMemo(() => ({ weighted: WeightedEdge }), []);
 
@@ -216,6 +285,7 @@ export const Root: FC = () => {
 					reactFlowRef.current = reactFlow;
 				}}
 				onEdgeClick={onEdgeClick}
+				onNodeDragStop={onNodeDragStop}
 				onPaneClick={onPaneClick}
 				panOnDrag={[1]}
 				panOnScroll

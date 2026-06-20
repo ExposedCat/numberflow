@@ -23,6 +23,7 @@ import { createPortal } from "react-dom";
 import { styled } from "@/theme";
 import { GRID_CELL_SIZE } from "@/utils/layout";
 import { compute, evaluate } from "@/utils/math";
+import { saveFlowState } from "@/utils/persistence";
 import { updateOne } from "@/utils/state";
 import type { WeightedEdgeType } from "../edges/WeightedEdge";
 import { Box } from "../ui/Box";
@@ -605,7 +606,10 @@ const resizeTextarea = (textarea: HTMLTextAreaElement) => {
 export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	data: { name, expression, inputs, computedValue },
 }) => {
-	const { setNodes, setEdges } = useReactFlow();
+	const { getEdges, getNodes, setEdges, setNodes } = useReactFlow<
+		NumberNodeType,
+		WeightedEdgeType
+	>();
 	const updateNodeInternals = useUpdateNodeInternals();
 
 	const outHandleId = useId();
@@ -847,15 +851,29 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 		if (!nodeId || isEditing) return;
 
 		const validHandles = new Set(inputs);
-		setEdges((prev) =>
-			prev.filter((edge) => {
-				if (edge.target !== nodeId) return true;
-				if (!edge.targetHandle) return false;
-				return validHandles.has(edge.targetHandle);
-			}),
-		);
-		setEditSessionInputs(null);
-	}, [inputs, isEditing, nodeId, setEdges]);
+		const currentEdges = getEdges();
+		const nextEdges = currentEdges.filter((edge) => {
+			if (edge.target !== nodeId) return true;
+			if (!edge.targetHandle) return false;
+			return validHandles.has(edge.targetHandle);
+		});
+
+		if (nextEdges.length !== currentEdges.length) {
+			setEdges(nextEdges);
+		}
+		if (editSessionInputs) {
+			saveFlowState(getNodes(), nextEdges);
+			setEditSessionInputs(null);
+		}
+	}, [
+		editSessionInputs,
+		getEdges,
+		getNodes,
+		inputs,
+		isEditing,
+		nodeId,
+		setEdges,
+	]);
 
 	const handleChange = ({
 		currentTarget,
@@ -880,10 +898,13 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const removeCurrentNode = () => {
 		if (!nodeId) return;
 
-		setNodes((prev) => prev.filter((node) => node.id !== nodeId));
-		setEdges((prev) =>
-			prev.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+		const nextNodes = getNodes().filter((node) => node.id !== nodeId);
+		const nextEdges = getEdges().filter(
+			(edge) => edge.source !== nodeId && edge.target !== nodeId,
 		);
+		setNodes(nextNodes);
+		setEdges(nextEdges);
+		saveFlowState(nextNodes, nextEdges);
 		setIsEditing(false);
 	};
 

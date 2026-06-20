@@ -1,7 +1,10 @@
 import type { CSSProperties } from "@stitches/react";
 import { Handle, type Position, useNodeId, useReactFlow } from "@xyflow/react";
 import type { FC } from "react";
+import { saveFlowState } from "@/utils/persistence";
+import type { WeightedEdgeType } from "../edges/WeightedEdge";
 import { StyledText } from "../ui/Typography";
+import type { NumberNodeType } from "./NumberNode";
 
 export type NodeHandleProps = {
 	id: string;
@@ -21,17 +24,20 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 	label,
 }) => {
 	const nodeId = useNodeId();
-	const { setEdges } = useReactFlow();
+	const { getEdges, getNodes, setEdges } = useReactFlow<
+		NumberNodeType,
+		WeightedEdgeType
+	>();
 	const isCircle = label.length <= 1;
 
 	const onContextMenu: React.MouseEventHandler = (event) => {
 		event.preventDefault();
 		if (!nodeId) return;
-		setEdges((prev) =>
-			prev.filter(
-				(edge) => edge[type] !== nodeId || edge[`${type}Handle`] !== id,
-			),
+		const nextEdges = getEdges().filter(
+			(edge) => edge[type] !== nodeId || edge[`${type}Handle`] !== id,
 		);
+		setEdges(nextEdges);
+		saveFlowState(getNodes(), nextEdges);
 	};
 
 	return (
@@ -95,16 +101,19 @@ export const DotHandle: FC<DotHandleProps> = ({
 	style,
 }) => {
 	const nodeId = useNodeId();
-	const { setEdges } = useReactFlow();
+	const { getEdges, getNodes, setEdges } = useReactFlow<
+		NumberNodeType,
+		WeightedEdgeType
+	>();
 
 	const onContextMenu: React.MouseEventHandler = (event) => {
 		event.preventDefault();
 		if (!nodeId) return;
-		setEdges((prev) =>
-			prev.filter(
-				(edge) => edge[type] !== nodeId || edge[`${type}Handle`] !== id,
-			),
+		const nextEdges = getEdges().filter(
+			(edge) => edge[type] !== nodeId || edge[`${type}Handle`] !== id,
 		);
+		setEdges(nextEdges);
+		saveFlowState(getNodes(), nextEdges);
 	};
 
 	return (
