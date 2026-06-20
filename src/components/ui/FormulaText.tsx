@@ -12,21 +12,13 @@ const VARIABLE_COLORS = [
 	"#be185d",
 ];
 
-const hashText = (text: string) => {
-	let hash = 0;
-	for (const character of text) {
-		hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-	}
-	return hash;
-};
-
-const getVariableColor = (name: string) =>
-	VARIABLE_COLORS[hashText(name) % VARIABLE_COLORS.length];
-
-const getTokenColor = ({ text, type }: FormulaToken) => {
+const getTokenColor = (
+	{ text, type }: FormulaToken,
+	variableColors: Map<string, string>,
+) => {
 	switch (type) {
 		case "variable":
-			return getVariableColor(text);
+			return variableColors.get(text) ?? VARIABLE_COLORS[0];
 		case "function":
 			return "#0072b2";
 		case "constant":
@@ -52,13 +44,26 @@ type FormulaTokensProps = {
 
 export const FormulaTokens: FC<FormulaTokensProps> = ({ expression }) => {
 	const tokens = useMemo(() => tokenizeFormula(expression), [expression]);
+	const variableColors = useMemo(() => {
+		const colors = new Map<string, string>();
+		for (const token of tokens) {
+			if (token.type !== "variable" || colors.has(token.text)) {
+				continue;
+			}
+			colors.set(
+				token.text,
+				VARIABLE_COLORS[colors.size % VARIABLE_COLORS.length],
+			);
+		}
+		return colors;
+	}, [tokens]);
 
 	return (
 		<>
 			{tokens.map((token, index) => (
 				<span
 					key={`${index}-${token.text}`}
-					style={{ color: getTokenColor(token) }}
+					style={{ color: getTokenColor(token, variableColors) }}
 				>
 					{token.text}
 				</span>

@@ -373,7 +373,7 @@ const getLeftColumnHeight = (leftInputs: string[]) =>
 	}, 0);
 
 const getValueText = (node: NumberNodeType) =>
-	String(node.data.computedValue ?? "NULL");
+	String(node.data.computedValue ?? 0);
 
 const getFormulaText = (node: NumberNodeType) =>
 	node.data.inputs.length > 0 ? node.data.expression.trim() : "";
@@ -1119,7 +1119,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 					}}
 				>
 					<StyledField data-node-field>
-						<StyledText>{computedValue ?? "NULL"}</StyledText>
+						<StyledText>{computedValue ?? 0}</StyledText>
 					</StyledField>
 					{formulaText && (
 						<StyledFormula title={formulaText}>
