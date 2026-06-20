@@ -10,16 +10,18 @@ import {
 	useEdgesState,
 	useNodesState,
 } from "@xyflow/react";
+import { Grid3X3, Move, Trash2 } from "lucide-react";
 import {
 	type FC,
 	type MouseEvent,
 	useCallback,
+	useId,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
-import { MdGridOn } from "react-icons/md";
 import { styled } from "@/theme";
+import { GRID_CELL_SIZE } from "@/utils/layout";
 import { Box } from "../ui/Box";
 
 import "@xyflow/react/dist/style.css";
@@ -30,7 +32,16 @@ import {
 } from "../edges/WeightedEdge";
 import { NumberNode, type NumberNodeType } from "../nodes/NumberNode";
 
-const SNAP_GRID: SnapGrid = [20, 20];
+const SNAP_GRID: SnapGrid = [GRID_CELL_SIZE, GRID_CELL_SIZE];
+const MAJOR_GRID_GAP = GRID_CELL_SIZE * 5;
+const FINE_GRID_DOT_SIZE = 1.3;
+const MAJOR_GRID_DOT_SIZE = 1.6;
+const ACTION_MENU_OFFSET = 8;
+const ACTION_MENU_EDGE_MARGIN = 12;
+
+type ActionMenuTarget =
+	| { kind: "node"; id: string; left: number; top: number }
+	| { kind: "edge"; id: string; left: number; top: number };
 
 const SnapToggleButton = styled("button", {
 	alignItems: "center",
@@ -67,10 +78,64 @@ const SnapToggleButton = styled("button", {
 	},
 });
 
+const PanelControls = styled("div", {
+	display: "inline-flex",
+	gap: "$xs",
+});
+
+const FloatingActionMenu = styled("div", {
+	backgroundColor: "$white",
+	border: "1px solid $border-default",
+	borderRadius: "$inner",
+	boxShadow: "0 0.35rem 1rem rgba(29, 28, 28, 0.18)",
+	display: "inline-flex",
+	gap: "$xs",
+	padding: "$xs",
+	position: "fixed",
+	zIndex: 20,
+});
+
+const FloatingActionButton = styled("button", {
+	alignItems: "center",
+	backgroundColor: "$white",
+	border: "1px solid $border-default",
+	borderRadius: "$inner",
+	color: "$status-error",
+	cursor: "pointer",
+	display: "inline-flex",
+	height: "2rem",
+	justifyContent: "center",
+	width: "2rem",
+
+	"&:hover": {
+		backgroundColor: "#fef2f2",
+		borderColor: "$status-error",
+	},
+});
+
+const getActionMenuPosition = (event: MouseEvent) => ({
+	left: Math.min(
+		event.clientX + ACTION_MENU_OFFSET,
+		window.innerWidth - ACTION_MENU_EDGE_MARGIN,
+	),
+	top: Math.min(
+		event.clientY + ACTION_MENU_OFFSET,
+		window.innerHeight - ACTION_MENU_EDGE_MARGIN,
+	),
+});
+
+const snapPositionToGrid = (position: NumberNodeType["position"]) => ({
+	x: Math.round(position.x / GRID_CELL_SIZE) * GRID_CELL_SIZE,
+	y: Math.round(position.y / GRID_CELL_SIZE) * GRID_CELL_SIZE,
+});
+
 export const Root: FC = () => {
 	const [nodes, setNodes, onNodesChange] = useNodesState<NumberNodeType>([]);
 	const [edges, setEdges, onEdgesChange] = useEdgesState<WeightedEdgeType>([]);
 	const [snapToGrid, setSnapToGrid] = useState(false);
+	const [actionMenu, setActionMenu] = useState<ActionMenuTarget | null>(null);
+	const fineGridId = useId();
+	const majorGridId = useId();
 	const reactFlowRef =
 		useRef<ReactFlowInstance<NumberNodeType, WeightedEdgeType>>(null);
 
@@ -100,6 +165,7 @@ export const Root: FC = () => {
 	);
 	const onPaneClick = useCallback(
 		(event: MouseEvent) => {
+			setActionMenu(null);
 			if (event.detail !== 2) return;
 
 			const position = reactFlowRef.current?.screenToFlowPosition(
@@ -107,15 +173,60 @@ export const Root: FC = () => {
 					x: event.clientX,
 					y: event.clientY,
 				},
-				{ snapToGrid },
+				{ snapToGrid: false },
 			);
 			if (!position) return;
 
 			const id = Date.now().toString();
-			setNodes((prev) => [...prev, createNumberNode(id, position)]);
+			const nodePosition = snapToGrid ? snapPositionToGrid(position) : position;
+			setNodes((prev) => [...prev, createNumberNode(id, nodePosition)]);
 		},
 		[createNumberNode, setNodes, snapToGrid],
 	);
+	const onNodeClick = useCallback((event: MouseEvent, node: NumberNodeType) => {
+		event.stopPropagation();
+		setActionMenu({
+			kind: "node",
+			id: node.id,
+			...getActionMenuPosition(event),
+		});
+	}, []);
+	const onEdgeClick = useCallback(
+		(event: MouseEvent, edge: WeightedEdgeType) => {
+			event.stopPropagation();
+			setActionMenu({
+				kind: "edge",
+				id: edge.id,
+				...getActionMenuPosition(event),
+			});
+		},
+		[],
+	);
+	const removeActionMenuTarget = useCallback(() => {
+		if (!actionMenu) return;
+
+		if (actionMenu.kind === "node") {
+			setNodes((prev) => prev.filter((node) => node.id !== actionMenu.id));
+			setEdges((prev) =>
+				prev.filter(
+					(edge) =>
+						edge.source !== actionMenu.id && edge.target !== actionMenu.id,
+				),
+			);
+		} else {
+			setEdges((prev) => prev.filter((edge) => edge.id !== actionMenu.id));
+		}
+
+		setActionMenu(null);
+	}, [actionMenu, setEdges, setNodes]);
+	const snapNodesToGrid = useCallback(() => {
+		setNodes((prev) =>
+			prev.map((node) => ({
+				...node,
+				position: snapPositionToGrid(node.position),
+			})),
+		);
+	}, [setNodes]);
 
 	const nodeTypes = useMemo(() => ({ number: NumberNode }), []);
 	const edgeTypes = useMemo(() => ({ weighted: WeightedEdge }), []);
@@ -130,6 +241,8 @@ export const Root: FC = () => {
 				onInit={(reactFlow) => {
 					reactFlowRef.current = reactFlow;
 				}}
+				onEdgeClick={onEdgeClick}
+				onNodeClick={onNodeClick}
 				onPaneClick={onPaneClick}
 				panOnDrag={[1]}
 				panOnScroll
@@ -139,31 +252,60 @@ export const Root: FC = () => {
 				zoomOnScroll={false}
 			>
 				<Panel position="top-right">
-					<SnapToggleButton
-						active={snapToGrid}
-						aria-label={`${snapToGrid ? "Disable" : "Enable"} grid snapping`}
-						aria-pressed={snapToGrid}
-						className="nopan"
-						onClick={() => setSnapToGrid((enabled) => !enabled)}
-						title={`${snapToGrid ? "Disable" : "Enable"} grid snapping`}
-						type="button"
-					>
-						<MdGridOn aria-hidden size={18} />
-						Snap
-					</SnapToggleButton>
+					<PanelControls>
+						<SnapToggleButton
+							active={snapToGrid}
+							aria-label={`${snapToGrid ? "Disable" : "Enable"} grid snapping`}
+							aria-pressed={snapToGrid}
+							className="nopan"
+							onClick={() => setSnapToGrid((enabled) => !enabled)}
+							title={`${snapToGrid ? "Disable" : "Enable"} grid snapping`}
+							type="button"
+						>
+							<Grid3X3 aria-hidden size={18} strokeWidth={2} />
+							Snap
+						</SnapToggleButton>
+						<SnapToggleButton
+							aria-label="Reposition nodes to closest grid cells"
+							className="nopan"
+							onClick={snapNodesToGrid}
+							title="Reposition nodes to closest grid cells"
+							type="button"
+						>
+							<Move aria-hidden size={18} strokeWidth={2} />
+							Reposition
+						</SnapToggleButton>
+					</PanelControls>
 				</Panel>
+				{actionMenu && (
+					<FloatingActionMenu
+						className="nodrag nopan"
+						style={{ left: actionMenu.left, top: actionMenu.top }}
+					>
+						<FloatingActionButton
+							aria-label={`Remove ${actionMenu.kind}`}
+							onClick={removeActionMenuTarget}
+							title={`Remove ${actionMenu.kind}`}
+							type="button"
+						>
+							<Trash2 aria-hidden size={18} strokeWidth={2} />
+						</FloatingActionButton>
+					</FloatingActionMenu>
+				)}
 				<Background
-					id="fine-grid"
-					color="#94a3b8"
-					gap={20}
-					size={1.3}
+					id={fineGridId}
+					color="#64748b"
+					gap={GRID_CELL_SIZE}
+					offset={FINE_GRID_DOT_SIZE / 2}
+					size={FINE_GRID_DOT_SIZE}
 					variant={BackgroundVariant.Dots}
 				/>
 				<Background
-					id="major-grid"
-					color="#94a3b8"
-					gap={100}
-					size={1.3}
+					id={majorGridId}
+					color="#64748b"
+					gap={MAJOR_GRID_GAP}
+					offset={MAJOR_GRID_DOT_SIZE / 2}
+					size={MAJOR_GRID_DOT_SIZE}
 					variant={BackgroundVariant.Dots}
 				/>
 			</ReactFlow>

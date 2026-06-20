@@ -20,6 +20,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { styled } from "@/theme";
+import { GRID_CELL_SIZE } from "@/utils/layout";
 import { compute, evaluate } from "@/utils/math";
 import { updateOne } from "@/utils/state";
 import type { WeightedEdgeType } from "../edges/WeightedEdge";
@@ -123,8 +124,10 @@ const SPACE_XS = ROOT_FONT_SIZE * 0.25;
 const SPACE_SM = ROOT_FONT_SIZE * 0.5;
 const BORDER_WIDTH = 1;
 const TOP_LABEL_CLEARANCE_HEIGHT = ROOT_FONT_SIZE * 0.2;
+const LEFT_LABEL_CLEARANCE_WIDTH = ROOT_FONT_SIZE * 0.2;
+const LEFT_HANDLE_BORDER_OVERLAP = SPACE_SM;
 const DOT_HANDLE_ROW_WIDTH = 6;
-const DOT_HANDLE_LEFT_MARGIN = SPACE_SM - 3;
+const DOT_HANDLE_LEFT_MARGIN = LEFT_HANDLE_BORDER_OVERLAP - 3;
 const DOT_HANDLE_ROW_HEIGHT = ROOT_FONT_SIZE * 1.35;
 const LOCAL_HANDLE_MIN_WIDTH = ROOT_FONT_SIZE * 1.05;
 const LOCAL_HANDLE_HEIGHT = ROOT_FONT_SIZE * 1.05;
@@ -267,7 +270,8 @@ const measureCompactHandleWidth = (name: string) => {
 
 const getLeftColumnWidth = (leftInputs: string[]): number =>
 	leftInputs.length > 0
-		? Math.max(...leftInputs.map(measureCompactHandleWidth)) - SPACE_SM
+		? Math.max(...leftInputs.map(measureCompactHandleWidth)) -
+			LEFT_HANDLE_BORDER_OVERLAP
 		: 0;
 
 const getLeftColumnHeight = (leftInputs: string[]) =>
@@ -332,6 +336,9 @@ const getNumberNodeSize = (
 	const hasVisibleLeftLabel = leftInputs.some((name) => name !== "input");
 	const topClearanceHeight =
 		hasTopLabel && !hasVisibleLeftLabel ? TOP_LABEL_CLEARANCE_HEIGHT : 0;
+	const leftClearanceWidth = hasVisibleLeftLabel
+		? LEFT_LABEL_CLEARANCE_WIDTH
+		: SPACE_SM;
 	const leftColumnWidth = getLeftColumnWidth(leftInputs);
 	const leftColumnHeight = getLeftColumnHeight(leftInputs);
 	const valueWidth = getCanvasTextWidth(
@@ -349,15 +356,19 @@ const getNumberNodeSize = (
 	const nameHeight = node.data.name
 		? NORMAL_TEXT_LINE_HEIGHT + BORDER_WIDTH
 		: 0;
-	const bodyWidth = leftColumnWidth + valueWidth + SPACE_SM * 2;
+	const bodyWidth =
+		leftColumnWidth + valueWidth + leftClearanceWidth + SPACE_SM;
 	const bodyHeight =
 		Math.max(leftColumnHeight, NORMAL_TEXT_LINE_HEIGHT) + SPACE_XS * 2;
+	const width = Math.ceil(Math.max(bodyWidth, nameWidth) + BORDER_WIDTH * 2);
+	const height = Math.ceil(
+		topClearanceHeight + nameHeight + bodyHeight + BORDER_WIDTH * 2,
+	);
+	const clampedHeight = Math.max(height, GRID_CELL_SIZE);
 
 	return {
-		width: Math.ceil(Math.max(bodyWidth, nameWidth) + BORDER_WIDTH * 2),
-		height: Math.ceil(
-			topClearanceHeight + nameHeight + bodyHeight + BORDER_WIDTH * 2,
-		),
+		width: Math.max(width, clampedHeight),
+		height: clampedHeight,
 	};
 };
 
@@ -626,6 +637,9 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const hasLeftColumnSpace = leftInputs.length > 0;
 	const hasTopLabel = topInputs.some((name) => name !== "input");
 	const hasVisibleLeftLabel = leftInputs.some((name) => name !== "input");
+	const leftContentPadding = hasVisibleLeftLabel
+		? `${LEFT_LABEL_CLEARANCE_WIDTH}px`
+		: "$sm";
 	const needsTopLabelClearance = hasTopLabel && !hasVisibleLeftLabel;
 	const sourcePosition = useMemo(() => {
 		if (!currentNode || !nodeId) {
@@ -882,7 +896,9 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 						gap: "$xs",
 						alignItems: "flex-start",
 						flex: "0 0 auto",
-						marginLeft: hasLeftColumnSpace ? "-$sm" : "0",
+						marginLeft: hasLeftColumnSpace
+							? `-${LEFT_HANDLE_BORDER_OVERLAP}px`
+							: "0",
 					}}
 				>
 					{leftInputs.map((name) =>
@@ -890,7 +906,9 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 							<DotHandleRow
 								key={name}
 								css={{
-									marginLeft: hasLeftColumnSpace ? "calc($sm - 3px)" : "-3px",
+									marginLeft: hasLeftColumnSpace
+										? `${DOT_HANDLE_LEFT_MARGIN}px`
+										: "-3px",
 								}}
 							>
 								<DotHandle
@@ -918,7 +936,8 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 						flex: 1,
 						minWidth: 0,
 						position: "relative",
-						paddingInline: "$sm",
+						paddingLeft: leftContentPadding,
+						paddingRight: "$sm",
 					}}
 				>
 					<StyledField
