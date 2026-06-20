@@ -39,9 +39,12 @@ const MAJOR_GRID_DOT_SIZE = 1.6;
 const ACTION_MENU_OFFSET = 8;
 const ACTION_MENU_EDGE_MARGIN = 12;
 
-type ActionMenuTarget =
-	| { kind: "node"; id: string; left: number; top: number }
-	| { kind: "edge"; id: string; left: number; top: number };
+type ActionMenuTarget = {
+	kind: "edge";
+	id: string;
+	left: number;
+	top: number;
+};
 
 const SnapToggleButton = styled("button", {
 	alignItems: "center",
@@ -83,18 +86,6 @@ const PanelControls = styled("div", {
 	gap: "$xs",
 });
 
-const FloatingActionMenu = styled("div", {
-	backgroundColor: "$white",
-	border: "1px solid $border-default",
-	borderRadius: "$inner",
-	boxShadow: "0 0.35rem 1rem rgba(29, 28, 28, 0.18)",
-	display: "inline-flex",
-	gap: "$xs",
-	padding: "$xs",
-	position: "fixed",
-	zIndex: 20,
-});
-
 const FloatingActionButton = styled("button", {
 	alignItems: "center",
 	backgroundColor: "$white",
@@ -105,7 +96,9 @@ const FloatingActionButton = styled("button", {
 	display: "inline-flex",
 	height: "2rem",
 	justifyContent: "center",
+	position: "fixed",
 	width: "2rem",
+	zIndex: 20,
 
 	"&:hover": {
 		backgroundColor: "#fef2f2",
@@ -183,14 +176,6 @@ export const Root: FC = () => {
 		},
 		[createNumberNode, setNodes, snapToGrid],
 	);
-	const onNodeClick = useCallback((event: MouseEvent, node: NumberNodeType) => {
-		event.stopPropagation();
-		setActionMenu({
-			kind: "node",
-			id: node.id,
-			...getActionMenuPosition(event),
-		});
-	}, []);
 	const onEdgeClick = useCallback(
 		(event: MouseEvent, edge: WeightedEdgeType) => {
 			event.stopPropagation();
@@ -205,20 +190,10 @@ export const Root: FC = () => {
 	const removeActionMenuTarget = useCallback(() => {
 		if (!actionMenu) return;
 
-		if (actionMenu.kind === "node") {
-			setNodes((prev) => prev.filter((node) => node.id !== actionMenu.id));
-			setEdges((prev) =>
-				prev.filter(
-					(edge) =>
-						edge.source !== actionMenu.id && edge.target !== actionMenu.id,
-				),
-			);
-		} else {
-			setEdges((prev) => prev.filter((edge) => edge.id !== actionMenu.id));
-		}
+		setEdges((prev) => prev.filter((edge) => edge.id !== actionMenu.id));
 
 		setActionMenu(null);
-	}, [actionMenu, setEdges, setNodes]);
+	}, [actionMenu, setEdges]);
 	const snapNodesToGrid = useCallback(() => {
 		setNodes((prev) =>
 			prev.map((node) => ({
@@ -227,7 +202,6 @@ export const Root: FC = () => {
 			})),
 		);
 	}, [setNodes]);
-
 	const nodeTypes = useMemo(() => ({ number: NumberNode }), []);
 	const edgeTypes = useMemo(() => ({ weighted: WeightedEdge }), []);
 
@@ -242,7 +216,6 @@ export const Root: FC = () => {
 					reactFlowRef.current = reactFlow;
 				}}
 				onEdgeClick={onEdgeClick}
-				onNodeClick={onNodeClick}
 				onPaneClick={onPaneClick}
 				panOnDrag={[1]}
 				panOnScroll
@@ -278,19 +251,19 @@ export const Root: FC = () => {
 					</PanelControls>
 				</Panel>
 				{actionMenu && (
-					<FloatingActionMenu
+					<FloatingActionButton
+						aria-label={`Remove ${actionMenu.kind}`}
 						className="nodrag nopan"
-						style={{ left: actionMenu.left, top: actionMenu.top }}
+						onClick={removeActionMenuTarget}
+						style={{
+							left: actionMenu.left,
+							top: actionMenu.top,
+						}}
+						title={`Remove ${actionMenu.kind}`}
+						type="button"
 					>
-						<FloatingActionButton
-							aria-label={`Remove ${actionMenu.kind}`}
-							onClick={removeActionMenuTarget}
-							title={`Remove ${actionMenu.kind}`}
-							type="button"
-						>
-							<Trash2 aria-hidden size={18} strokeWidth={2} />
-						</FloatingActionButton>
-					</FloatingActionMenu>
+						<Trash2 aria-hidden size={18} strokeWidth={2} />
+					</FloatingActionButton>
 				)}
 				<Background
 					id={fineGridId}

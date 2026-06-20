@@ -9,6 +9,7 @@ import {
 	useReactFlow,
 	useUpdateNodeInternals,
 } from "@xyflow/react";
+import { Trash2 } from "lucide-react";
 import type { ChangeEvent, FC, KeyboardEvent, PointerEvent } from "react";
 import {
 	useEffect,
@@ -25,6 +26,7 @@ import { compute, evaluate } from "@/utils/math";
 import { updateOne } from "@/utils/state";
 import type { WeightedEdgeType } from "../edges/WeightedEdge";
 import { Box } from "../ui/Box";
+import { FormulaTokens } from "../ui/FormulaText";
 import { PopupContent } from "../ui/Popup";
 import { StyledText } from "../ui/Typography";
 import { DotHandle, LocalHandle } from "./LocalHandle";
@@ -40,41 +42,65 @@ export type NumberNodeType = Node<
 >;
 
 const StyledTextarea = styled("textarea", {
-	boxSizing: "border-box",
-	display: "block",
-	fieldSizing: "content",
-	fontSize: "$normal",
-	lineHeight: "1.4",
-	maxHeight: "8rem",
-	minWidth: 0,
-	minHeight: "2.25rem",
-	overflow: "auto",
-	resize: "none",
-	width: "100%",
+	background: "transparent",
 	border: "none",
 	borderRadius: "$inner",
-	paddingBlock: "$xs",
+	boxSizing: "border-box",
+	caretColor: "$text-primary",
+	color: "transparent",
+	display: "block",
+	fieldSizing: "content",
+	fontFamily: "inherit",
+	fontSize: "$normal",
+	lineHeight: "1.75rem",
+	maxHeight: "8rem",
+	minHeight: "2.25rem",
+	minWidth: 0,
+	overflow: "auto",
+	position: "relative",
+	resize: "none",
+	textAlign: "center",
+	width: "100%",
+	zIndex: 1,
+	paddingBlock: "0.25rem",
 	paddingInline: "$sm",
+	"&::selection": {
+		backgroundColor: "rgba(0, 114, 178, 0.24)",
+		color: "transparent",
+	},
 	"&:focus": {
 		outline: "none",
 	},
 });
 
-const StyledField = styled("button", {
+const StyledField = styled("div", {
 	alignItems: "center",
 	background: "transparent",
 	border: "none",
 	color: "inherit",
-	cursor: "text",
+	cursor: "inherit",
 	display: "flex",
 	fontFamily: "inherit",
 	fontSize: "$normal",
-	height: "100%",
+	height: "auto",
 	justifyContent: "center",
 	marginRight: 0,
 	padding: 0,
 	textAlign: "center",
 	width: "100%",
+});
+
+const StyledFormula = styled("span", {
+	display: "block",
+	fontSize: "0.72rem",
+	fontWeight: "$medium",
+	lineHeight: 1.1,
+	maxWidth: "15rem",
+	overflow: "hidden",
+	textAlign: "center",
+	textOverflow: "ellipsis",
+	whiteSpace: "nowrap",
+	width: "max-content",
 });
 
 const DotHandleRow = styled("div", {
@@ -96,11 +122,71 @@ const TopHandleRail = styled("div", {
 	transform: "translate(-50%, -50%)",
 });
 
-const ExpressionPopup = styled(PopupContent, {
+const ExpressionPopupFrame = styled("div", {
 	position: "fixed",
 	width: "min(28rem, calc(100vw - 2rem))",
 	minWidth: "14rem",
 	transform: "translateX(-50%)",
+	zIndex: 20,
+});
+
+const ExpressionPopup = styled(PopupContent, {
+	position: "relative",
+	width: "100%",
+	transform: "none",
+});
+
+const FormulaActionRow = styled("div", {
+	display: "flex",
+	justifyContent: "flex-end",
+	marginTop: "$xs",
+});
+
+const FormulaActionButton = styled("button", {
+	alignItems: "center",
+	backgroundColor: "$white",
+	border: "1px solid $border-default",
+	borderRadius: "$inner",
+	boxShadow: "0 0.35rem 1rem rgba(29, 28, 28, 0.18)",
+	color: "$status-error",
+	cursor: "pointer",
+	display: "inline-flex",
+	height: "2rem",
+	justifyContent: "center",
+	width: "2rem",
+
+	"&:hover": {
+		backgroundColor: "#fef2f2",
+		borderColor: "$status-error",
+	},
+});
+
+const FormulaEditorShell = styled("div", {
+	position: "relative",
+	width: "100%",
+});
+
+const FormulaEditorHighlight = styled("div", {
+	borderRadius: "$inner",
+	color: "$text-primary",
+	fontFamily: "inherit",
+	fontSize: "$normal",
+	inset: 0,
+	lineHeight: "1.75rem",
+	maxHeight: "8rem",
+	minHeight: "2.25rem",
+	overflow: "hidden",
+	paddingBlock: "0.25rem",
+	paddingInline: "$sm",
+	pointerEvents: "none",
+	position: "absolute",
+	textAlign: "center",
+	whiteSpace: "pre-wrap",
+	wordBreak: "break-word",
+});
+
+const FormulaEditorHighlightContent = styled("div", {
+	minHeight: "1.75rem",
 });
 
 const isCompactInputName = (name: string) =>
@@ -137,6 +223,11 @@ const LOCAL_HANDLE_FONT_WEIGHT = 600;
 const NORMAL_TEXT_FONT_SIZE = ROOT_FONT_SIZE;
 const NORMAL_TEXT_FONT_WEIGHT = 400;
 const NORMAL_TEXT_LINE_HEIGHT = ROOT_FONT_SIZE * 1.2;
+const FORMULA_TEXT_FONT_SIZE = ROOT_FONT_SIZE * 0.72;
+const FORMULA_TEXT_FONT_WEIGHT = 500;
+const FORMULA_TEXT_LINE_HEIGHT = FORMULA_TEXT_FONT_SIZE * 1.1;
+const FORMULA_TEXT_MAX_WIDTH = ROOT_FONT_SIZE * 15;
+const FORMULA_TEXT_WIDTH_BUFFER = ROOT_FONT_SIZE * 1.5;
 
 let textMeasureContext: CanvasRenderingContext2D | null | undefined;
 
@@ -284,6 +375,9 @@ const getLeftColumnHeight = (leftInputs: string[]) =>
 const getValueText = (node: NumberNodeType) =>
 	String(node.data.computedValue ?? "NULL");
 
+const getFormulaText = (node: NumberNodeType) =>
+	node.data.inputs.length > 0 ? node.data.expression.trim() : "";
+
 const getCompleteInputPositions = (
 	inputs: string[],
 	positions: Partial<Record<string, TargetHandlePosition>>,
@@ -346,6 +440,18 @@ const getNumberNodeSize = (
 		NORMAL_TEXT_FONT_SIZE,
 		NORMAL_TEXT_FONT_WEIGHT,
 	);
+	const formulaText = getFormulaText(node);
+	const formulaWidth = formulaText
+		? Math.min(
+				getCanvasTextWidth(
+					formulaText,
+					FORMULA_TEXT_FONT_SIZE,
+					FORMULA_TEXT_FONT_WEIGHT,
+				) + FORMULA_TEXT_WIDTH_BUFFER,
+				FORMULA_TEXT_MAX_WIDTH,
+			)
+		: 0;
+	const formulaHeight = formulaText ? FORMULA_TEXT_LINE_HEIGHT + SPACE_XS : 0;
 	const nameWidth = node.data.name
 		? getCanvasTextWidth(
 				node.data.name.toUpperCase(),
@@ -357,9 +463,13 @@ const getNumberNodeSize = (
 		? NORMAL_TEXT_LINE_HEIGHT + BORDER_WIDTH
 		: 0;
 	const bodyWidth =
-		leftColumnWidth + valueWidth + leftClearanceWidth + SPACE_SM;
+		leftColumnWidth +
+		Math.max(valueWidth, formulaWidth) +
+		leftClearanceWidth +
+		SPACE_SM;
 	const bodyHeight =
-		Math.max(leftColumnHeight, NORMAL_TEXT_LINE_HEIGHT) + SPACE_XS * 2;
+		Math.max(leftColumnHeight, NORMAL_TEXT_LINE_HEIGHT + formulaHeight) +
+		SPACE_XS * 2;
 	const width = Math.ceil(Math.max(bodyWidth, nameWidth) + BORDER_WIDTH * 2);
 	const height = Math.ceil(
 		topClearanceHeight + nameHeight + bodyHeight + BORDER_WIDTH * 2,
@@ -505,11 +615,13 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const allNodes = useNodes<NumberNodeType>();
 
 	const [isEditing, setIsEditing] = useState(false);
+	const [isMovingNode, setIsMovingNode] = useState(false);
 	const [editSessionInputs, setEditSessionInputs] = useState<string[] | null>(
 		null,
 	);
+	const [editorScroll, setEditorScroll] = useState({ left: 0, top: 0 });
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
-	const fieldRef = useRef<HTMLButtonElement | null>(null);
+	const nodeRef = useRef<HTMLDivElement | null>(null);
 	const pointerStartRef = useRef<{
 		x: number;
 		y: number;
@@ -549,6 +661,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const nodeKind: NumberNodeKind =
 		inputs.length === 0 ? "input" : hasOutgoingEdges ? "processor" : "output";
 	const nodeStyle = NODE_STYLE_BY_KIND[nodeKind];
+	const formulaText = inputs.length > 0 ? expression.trim() : "";
 	const handleStyle = {
 		background: nodeStyle.handle,
 		border: `1px solid ${nodeStyle.border}`,
@@ -764,6 +877,16 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 		resizeTextarea(currentTarget);
 	};
 
+	const removeCurrentNode = () => {
+		if (!nodeId) return;
+
+		setNodes((prev) => prev.filter((node) => node.id !== nodeId));
+		setEdges((prev) =>
+			prev.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+		);
+		setIsEditing(false);
+	};
+
 	const openEditor = (target: HTMLElement) => {
 		const rect = target.getBoundingClientRect();
 		setPopupPosition({
@@ -776,6 +899,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 
 	useEffect(() => {
 		if (!isEditing) return;
+		setEditorScroll({ left: 0, top: 0 });
 		inputRef.current?.focus();
 		inputRef.current?.select();
 		if (inputRef.current) {
@@ -783,43 +907,67 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 		}
 	}, [isEditing]);
 
+	const isNodePointerTarget = (target: EventTarget | null) =>
+		!(target instanceof Element && target.closest(".react-flow__handle"));
+
 	const handleFieldPointerDown = ({
 		clientX,
 		clientY,
-	}: PointerEvent<HTMLButtonElement>) => {
+		target,
+	}: PointerEvent<HTMLDivElement>) => {
+		if (!isNodePointerTarget(target)) {
+			pointerStartRef.current = null;
+			setIsMovingNode(false);
+			return;
+		}
+
+		setIsMovingNode(false);
 		pointerStartRef.current = { x: clientX, y: clientY, moved: false };
 	};
 
 	const handleFieldPointerMove = ({
 		clientX,
 		clientY,
-	}: PointerEvent<HTMLButtonElement>) => {
+	}: PointerEvent<HTMLDivElement>) => {
 		const start = pointerStartRef.current;
 		if (!start) return;
 
 		const distance = Math.hypot(clientX - start.x, clientY - start.y);
 		if (distance > 4) {
 			start.moved = true;
+			setIsMovingNode(true);
 		}
 	};
 
 	const handleFieldPointerUp = ({
 		clientX,
 		clientY,
-	}: PointerEvent<HTMLButtonElement>) => {
+		target,
+	}: PointerEvent<HTMLDivElement>) => {
+		if (!isNodePointerTarget(target)) {
+			pointerStartRef.current = null;
+			setIsMovingNode(false);
+			return;
+		}
+
 		const start = pointerStartRef.current;
 		pointerStartRef.current = null;
-		if (!start) return;
+		if (!start) {
+			setIsMovingNode(false);
+			return;
+		}
 
 		const distance = Math.hypot(clientX - start.x, clientY - start.y);
 		if (!start.moved && distance <= 4) {
-			if (fieldRef.current) {
-				openEditor(fieldRef.current);
+			if (nodeRef.current) {
+				openEditor(nodeRef.current);
 			}
 		}
+		setIsMovingNode(false);
 	};
 
 	const handleInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+		event.stopPropagation();
 		if (event.key === "Enter" && !event.shiftKey) {
 			event.preventDefault();
 			setIsEditing(false);
@@ -832,8 +980,29 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 
 	return (
 		<Box
+			ref={nodeRef}
 			column
 			center
+			// biome-ignore lint/a11y/useSemanticElements: React Flow nodes carry draggable handles and layout content, so a native button would create invalid nested structure here.
+			role="button"
+			tabIndex={0}
+			aria-label="Edit expression"
+			onPointerDown={handleFieldPointerDown}
+			onPointerMove={handleFieldPointerMove}
+			onPointerUp={handleFieldPointerUp}
+			onPointerCancel={() => {
+				pointerStartRef.current = null;
+				setIsMovingNode(false);
+			}}
+			onKeyDown={(event) => {
+				if (event.defaultPrevented || event.target !== event.currentTarget) {
+					return;
+				}
+				if (event.key === "Enter" || event.key === " ") {
+					event.preventDefault();
+					openEditor(event.currentTarget);
+				}
+			}}
 			css={{
 				background: nodeStyle.background,
 				position: "relative",
@@ -842,6 +1011,12 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				border: `1px solid ${nodeStyle.border}`,
 				borderRadius: "$basic",
 				boxShadow: `0 0.35rem 1rem ${nodeStyle.shadow}`,
+				cursor: isMovingNode ? "grabbing" : "grab",
+
+				"&:focus-visible": {
+					outline: `2px solid ${nodeStyle.border}`,
+					outlineOffset: "3px",
+				},
 			}}
 		>
 			{compactInputs.length > 0 && (
@@ -932,39 +1107,30 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				</Box>
 
 				<Box
+					column
+					center
 					css={{
 						flex: 1,
+						gap: "$xs",
 						minWidth: 0,
 						position: "relative",
 						paddingLeft: leftContentPadding,
 						paddingRight: "$sm",
 					}}
 				>
-					<StyledField
-						ref={fieldRef}
-						type="button"
-						tabIndex={0}
-						aria-label="Edit expression"
-						onPointerDown={handleFieldPointerDown}
-						onPointerMove={handleFieldPointerMove}
-						onPointerUp={handleFieldPointerUp}
-						onPointerCancel={() => {
-							pointerStartRef.current = null;
-						}}
-						onKeyDown={(event) => {
-							if (event.key === "Enter" || event.key === " ") {
-								event.preventDefault();
-								openEditor(event.currentTarget);
-							}
-						}}
-					>
+					<StyledField data-node-field>
 						<StyledText>{computedValue ?? "NULL"}</StyledText>
 					</StyledField>
+					{formulaText && (
+						<StyledFormula title={formulaText}>
+							<FormulaTokens expression={formulaText} />
+						</StyledFormula>
+					)}
 
 					{isEditing &&
 						popupPosition &&
 						createPortal(
-							<ExpressionPopup
+							<ExpressionPopupFrame
 								className="nodrag nowheel nopan"
 								css={{
 									top: popupPosition.top,
@@ -973,14 +1139,47 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 								onClick={(event) => event.stopPropagation()}
 								onPointerDown={(event) => event.stopPropagation()}
 							>
-								<StyledTextarea
-									ref={inputRef}
-									value={expression ?? ""}
-									onChange={handleChange}
-									onBlur={() => setIsEditing(false)}
-									onKeyDown={handleInputKeyDown}
-								/>
-							</ExpressionPopup>,
+								<ExpressionPopup>
+									<FormulaEditorShell>
+										<FormulaEditorHighlight aria-hidden="true">
+											<FormulaEditorHighlightContent
+												style={{
+													transform: `translate(${-editorScroll.left}px, ${-editorScroll.top}px)`,
+												}}
+											>
+												<FormulaTokens expression={expression ?? ""} />
+											</FormulaEditorHighlightContent>
+										</FormulaEditorHighlight>
+										<StyledTextarea
+											ref={inputRef}
+											value={expression ?? ""}
+											onChange={handleChange}
+											onBlur={() => setIsEditing(false)}
+											onKeyDown={handleInputKeyDown}
+											onScroll={(event) => {
+												setEditorScroll({
+													left: event.currentTarget.scrollLeft,
+													top: event.currentTarget.scrollTop,
+												});
+											}}
+											spellCheck={false}
+										/>
+									</FormulaEditorShell>
+								</ExpressionPopup>
+								<FormulaActionRow>
+									<FormulaActionButton
+										aria-label="Remove node"
+										onClick={removeCurrentNode}
+										onPointerDown={(event) => {
+											event.preventDefault();
+										}}
+										title="Remove node"
+										type="button"
+									>
+										<Trash2 aria-hidden size={18} strokeWidth={2} />
+									</FormulaActionButton>
+								</FormulaActionRow>
+							</ExpressionPopupFrame>,
 							document.body,
 						)}
 				</Box>
