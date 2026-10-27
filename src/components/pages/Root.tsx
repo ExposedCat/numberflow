@@ -31,6 +31,7 @@ import {
 	loadWorkspaceState,
 	saveWorkspaceState,
 } from "@/utils/persistence";
+import { ClipOverlay, WireClips } from "../clips/WireClips";
 import { Box } from "../ui/Box";
 import { ControlPanel, IconButton, PanelButton } from "../ui/Controls";
 import { PageSwitcher } from "./PageSwitcher";
@@ -49,7 +50,7 @@ const ACTION_MENU_OFFSET = 8;
 const ACTION_MENU_EDGE_MARGIN = 12;
 
 type ActionMenuTarget = {
-	kind: "edge";
+	kind: "edge" | "clip";
 	id: string;
 	left: number;
 	top: number;
@@ -99,7 +100,7 @@ export const Root: FC = () => {
 	const [workspace, setWorkspace] = useState(loadWorkspaceState);
 	const { pages, activePageId } = workspace;
 	const activePage = pages.find((page) => page.id === activePageId) ?? pages[0];
-	const { nodes, edges } = activePage;
+	const { nodes, edges, clips } = activePage;
 	const updatePage = useCallback(
 		(update: (page: FlowPage) => FlowPage) => {
 			setWorkspace((previous) => ({
@@ -245,12 +246,18 @@ export const Root: FC = () => {
 	);
 	const removeActionMenuTarget = useCallback(() => {
 		if (!actionMenu) return;
-
-		const nextEdges = edges.filter((edge) => edge.id !== actionMenu.id);
-		setEdges(nextEdges);
+		if (actionMenu.kind === "clip") {
+			updatePage((page) => ({
+				...page,
+				clips: page.clips.filter((clip) => clip.id !== actionMenu.id),
+			}));
+		} else {
+			const nextEdges = edges.filter((edge) => edge.id !== actionMenu.id);
+			setEdges(nextEdges);
+		}
 
 		setActionMenu(null);
-	}, [actionMenu, edges, setEdges]);
+	}, [actionMenu, edges, setEdges, updatePage]);
 	const snapNodesToGrid = useCallback(() => {
 		const nextNodes = nodes.map((node) => ({
 			...node,
@@ -263,101 +270,121 @@ export const Root: FC = () => {
 
 	return (
 		<Box column center style={{ width: "100vw", height: "100vh" }}>
-			<ReactFlow
+			<WireClips
 				key={activePage.id}
-				defaultViewport={activePage.viewport}
-				onMoveEnd={(_, viewport) =>
-					updatePage((page) => ({ ...page, viewport }))
-				}
-				{...{ nodes, edges, onNodesChange, onEdgesChange, onConnect }}
-				nodeTypes={nodeTypes}
-				edgeTypes={edgeTypes}
-				connectionLineComponent={WeightedConnectionLine}
-				onInit={(reactFlow) => {
-					reactFlowRef.current = reactFlow;
+				clips={clips}
+				edgeIds={edges.map((edge) => edge.id)}
+				onChange={(clips) => {
+					setActionMenu(null);
+					updatePage((page) => ({ ...page, clips }));
 				}}
-				onEdgeClick={onEdgeClick}
-				onPaneClick={onPaneClick}
-				panOnDrag={[1]}
-				panOnScroll
-				snapGrid={SNAP_GRID}
-				snapToGrid={snapToGrid}
-				zoomOnDoubleClick={false}
-				zoomOnScroll={false}
+				toFlowPosition={(point) =>
+					reactFlowRef.current?.screenToFlowPosition(point, {
+						snapToGrid: false,
+					}) ?? point
+				}
+				onClipClick={(event, id) =>
+					setActionMenu({ kind: "clip", id, ...getActionMenuPosition(event) })
+				}
 			>
-				<Panel position="top-left">
-					<PageControls>
-						<PageSwitcher
-							pages={pages}
-							activePageId={activePageId}
-							onSelect={selectPage}
-							onCreate={addPage}
-							onDelete={deletePage}
-						/>
-					</PageControls>
-				</Panel>
-				<Panel position="top-right">
-					<ControlPanel>
-						<PanelButton
-							aria-label={`${snapToGrid ? "Disable" : "Enable"} grid snapping`}
-							aria-pressed={snapToGrid}
-							className="nopan"
-							onClick={() => setSnapToGrid((enabled) => !enabled)}
-							title={`${snapToGrid ? "Disable" : "Enable"} grid snapping`}
-							type="button"
-						>
-							<Grid3X3 aria-hidden size={18} strokeWidth={2} />
-							Snap
-						</PanelButton>
-						<PanelButton
-							aria-label="Reposition nodes to closest grid cells"
-							className="nopan"
-							onClick={snapNodesToGrid}
-							title="Reposition nodes to closest grid cells"
-							type="button"
-						>
-							<Move aria-hidden size={18} strokeWidth={2} />
-							<RepositionLabel>Reposition</RepositionLabel>
-						</PanelButton>
-					</ControlPanel>
-				</Panel>
-				{actionMenu && (
-					<FloatingActionButton
-						appearance="danger"
-						aria-label={`Remove ${actionMenu.kind}`}
-						className="nodrag nopan"
-						onClick={removeActionMenuTarget}
-						style={{
-							left: actionMenu.left,
-							top: actionMenu.top,
-						}}
-						title={`Remove ${actionMenu.kind}`}
-						type="button"
-					>
-						<Trash2 aria-hidden size={18} strokeWidth={2} />
-					</FloatingActionButton>
-				)}
-				<Background
-					id={fineGridId}
-					color={theme.colors.grid.toString()}
-					gap={GRID_CELL_SIZE}
-					offset={FINE_GRID_DOT_SIZE / 2}
-					size={FINE_GRID_DOT_SIZE}
-					variant={BackgroundVariant.Dots}
-				/>
-				<Panel
-					position="bottom-center"
-					style={{
-						pointerEvents: "none",
-						width: "calc(100% - 32px)",
-						textAlign: "center",
+				<ReactFlow
+					key={activePage.id}
+					defaultViewport={activePage.viewport}
+					onMoveEnd={(_, viewport) =>
+						updatePage((page) => ({ ...page, viewport }))
+					}
+					{...{ nodes, edges, onNodesChange, onEdgesChange, onConnect }}
+					nodeTypes={nodeTypes}
+					edgeTypes={edgeTypes}
+					connectionLineComponent={WeightedConnectionLine}
+					onInit={(reactFlow) => {
+						reactFlowRef.current = reactFlow;
 					}}
+					onEdgeClick={onEdgeClick}
+					onPaneClick={onPaneClick}
+					panOnDrag={[1]}
+					panOnScroll
+					snapGrid={SNAP_GRID}
+					snapToGrid={snapToGrid}
+					zoomOnDoubleClick={false}
+					zoomOnScroll={false}
 				>
-					<CanvasHint>
-						Double-click to add a number · Click a number to edit
-					</CanvasHint>
-				</Panel>
-			</ReactFlow>
+					<ClipOverlay />
+					<Panel position="top-left">
+						<PageControls>
+							<PageSwitcher
+								pages={pages}
+								activePageId={activePageId}
+								onSelect={selectPage}
+								onCreate={addPage}
+								onDelete={deletePage}
+							/>
+						</PageControls>
+					</Panel>
+					<Panel position="top-right">
+						<ControlPanel>
+							<PanelButton
+								aria-label={`${snapToGrid ? "Disable" : "Enable"} grid snapping`}
+								aria-pressed={snapToGrid}
+								className="nopan"
+								onClick={() => setSnapToGrid((enabled) => !enabled)}
+								title={`${snapToGrid ? "Disable" : "Enable"} grid snapping`}
+								type="button"
+							>
+								<Grid3X3 aria-hidden size={18} strokeWidth={2} />
+								Snap
+							</PanelButton>
+							<PanelButton
+								aria-label="Reposition nodes to closest grid cells"
+								className="nopan"
+								onClick={snapNodesToGrid}
+								title="Reposition nodes to closest grid cells"
+								type="button"
+							>
+								<Move aria-hidden size={18} strokeWidth={2} />
+								<RepositionLabel>Reposition</RepositionLabel>
+							</PanelButton>
+						</ControlPanel>
+					</Panel>
+					{actionMenu && (
+						<FloatingActionButton
+							appearance="danger"
+							aria-label={`Remove ${actionMenu.kind}`}
+							className="nodrag nopan"
+							onClick={removeActionMenuTarget}
+							style={{
+								left: actionMenu.left,
+								top: actionMenu.top,
+							}}
+							title={`Remove ${actionMenu.kind}`}
+							type="button"
+						>
+							<Trash2 aria-hidden size={18} strokeWidth={2} />
+						</FloatingActionButton>
+					)}
+					<Background
+						id={fineGridId}
+						color={theme.colors.grid.toString()}
+						gap={GRID_CELL_SIZE}
+						offset={FINE_GRID_DOT_SIZE / 2}
+						size={FINE_GRID_DOT_SIZE}
+						variant={BackgroundVariant.Dots}
+					/>
+					<Panel
+						position="bottom-center"
+						style={{
+							pointerEvents: "none",
+							width: "calc(100% - 32px)",
+							textAlign: "center",
+						}}
+					>
+						<CanvasHint>
+							Double-click to add a number · Click a number to edit · Ctrl +
+							drag across wires to clip
+						</CanvasHint>
+					</Panel>
+				</ReactFlow>
+			</WireClips>
 		</Box>
 	);
 };

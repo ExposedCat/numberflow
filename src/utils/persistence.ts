@@ -1,6 +1,7 @@
 import type { Viewport } from "@xyflow/react";
 import type { WeightedEdgeType } from "@/components/edges/WeightedEdge";
 import type { NumberNodeType } from "@/components/nodes/NumberNode";
+import { isWireClip, type WireClip } from "./clips";
 
 const STORAGE_KEY = "numberflow:state";
 const STORAGE_VERSION = 1;
@@ -33,6 +34,7 @@ export type FlowPage = FlowState & {
 	id: string;
 	name: string;
 	viewport: Viewport;
+	clips: WireClip[];
 };
 
 export type WorkspaceState = {
@@ -45,6 +47,7 @@ export const createPage = (name: string): FlowPage => ({
 	name,
 	nodes: [],
 	edges: [],
+	clips: [],
 	viewport: { x: 0, y: 0, zoom: 1 },
 });
 
@@ -160,10 +163,13 @@ const isPage = (value: unknown): value is FlowPage =>
 	Array.isArray(value.nodes) &&
 	value.nodes.every(isPersistedNode) &&
 	Array.isArray(value.edges) &&
-	value.edges.every(isPersistedEdge);
+	value.edges.every(isPersistedEdge) &&
+	(value.clips === undefined ||
+		(Array.isArray(value.clips) && value.clips.every(isWireClip)));
 
 const restorePage = (page: FlowPage): FlowPage => ({
 	...page,
+	clips: page.clips ?? [],
 	// Older versions used React-generated IDs for the single output handle.
 	edges: page.edges.map((edge) => ({ ...edge, sourceHandle: "output" })),
 });
@@ -213,6 +219,14 @@ export const saveWorkspaceState = ({ pages, activePageId }: WorkspaceState) => {
 						id: page.id,
 						name: page.name,
 						viewport: page.viewport,
+						clips: page.clips
+							.map((clip) => ({
+								...clip,
+								edgeIds: clip.edgeIds.filter((id) =>
+									page.edges.some((edge) => edge.id === id),
+								),
+							}))
+							.filter((clip) => clip.edgeIds.length > 0),
 						nodes,
 						edges,
 					};
