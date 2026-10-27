@@ -12,8 +12,9 @@ const StyledSelect = styled("select", {
 	fontSize: "$normal",
 	padding: "$sm",
 	borderRadius: "$basic",
-	border: "1px solid #ccc",
-	background: "white",
+	border: "1px solid $border-default",
+	background: "$surface",
+	color: "$text-primary",
 });
 
 export const OperationLabel: FC<OperationLabelProps> = ({

@@ -8,20 +8,6 @@ import type { FC } from "react";
 
 export type WeightedEdgeType = Edge<Record<string, never>, "weighted">;
 
-const EDGE_DASH_PATTERN = "8 8";
-const EDGE_DASH_OFFSET = "16";
-const EDGE_DASH_DURATION = "0.8s";
-
-const AnimatedDash = () => (
-	<animate
-		attributeName="stroke-dashoffset"
-		from={EDGE_DASH_OFFSET}
-		to="0"
-		dur={EDGE_DASH_DURATION}
-		repeatCount="indefinite"
-	/>
-);
-
 export const WeightedEdge: FC<EdgeProps<WeightedEdgeType>> = ({
 	id,
 	sourceX,
@@ -42,14 +28,7 @@ export const WeightedEdge: FC<EdgeProps<WeightedEdgeType>> = ({
 
 	return (
 		<g data-edgeid={id}>
-			<path
-				d={path}
-				fill="none"
-				className="react-flow__edge-path"
-				strokeDasharray={EDGE_DASH_PATTERN}
-			>
-				<AnimatedDash />
-			</path>
+			<path d={path} fill="none" className="react-flow__edge-path" />
 			<path
 				d={path}
 				fill="none"
@@ -90,10 +69,7 @@ export const WeightedConnectionLine: FC<ConnectionLineComponentProps> = ({
 			d={path}
 			fill="none"
 			className="react-flow__connection-path"
-			strokeDasharray={EDGE_DASH_PATTERN}
 			style={connectionLineStyle}
-		>
-			<AnimatedDash />
-		</path>
+		/>
 	);
 };

@@ -9,27 +9,19 @@ import {
 	useReactFlow,
 	useUpdateNodeInternals,
 } from "@xyflow/react";
-import { Trash2 } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import type { ChangeEvent, FC, KeyboardEvent, PointerEvent } from "react";
-import {
-	useEffect,
-	useId,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { styled } from "@/theme";
+import { styled, theme } from "@/theme";
 import { GRID_CELL_SIZE } from "@/utils/layout";
 import { compute, evaluate } from "@/utils/math";
-import { saveFlowState } from "@/utils/persistence";
 import { updateOne } from "@/utils/state";
 import type { WeightedEdgeType } from "../edges/WeightedEdge";
 import { Box } from "../ui/Box";
+import { fieldSurfaceStyles, IconButton } from "../ui/Controls";
 import { FormulaTokens } from "../ui/FormulaText";
 import { PopupContent } from "../ui/Popup";
-import { StyledText } from "../ui/Typography";
 import { DotHandle, LocalHandle } from "./LocalHandle";
 
 export type NumberNodeType = Node<
@@ -51,7 +43,7 @@ const StyledTextarea = styled("textarea", {
 	color: "transparent",
 	display: "block",
 	fieldSizing: "content",
-	fontFamily: "inherit",
+	fontFamily: "$number",
 	fontSize: "$normal",
 	lineHeight: "1.75rem",
 	maxHeight: "8rem",
@@ -60,14 +52,14 @@ const StyledTextarea = styled("textarea", {
 	overflow: "auto",
 	position: "relative",
 	resize: "none",
-	textAlign: "center",
+	textAlign: "left",
 	width: "100%",
 	zIndex: 1,
 	paddingBlock: "0.25rem",
 	paddingInline: "$sm",
 	"&::selection": {
-		backgroundColor: "rgba(0, 114, 178, 0.24)",
-		color: "transparent",
+		backgroundColor: "$selection",
+		color: "$text-primary",
 	},
 	"&:focus": {
 		outline: "none",
@@ -81,24 +73,26 @@ const StyledField = styled("div", {
 	color: "inherit",
 	cursor: "inherit",
 	display: "flex",
-	fontFamily: "inherit",
-	fontSize: "$normal",
+	fontFamily: "$number",
+	fontSize: "$number",
+	lineHeight: 1.4,
+	fontVariantNumeric: "tabular-nums",
 	height: "auto",
-	justifyContent: "center",
+	justifyContent: "flex-start",
 	marginRight: 0,
 	padding: 0,
-	textAlign: "center",
+	textAlign: "left",
 	width: "100%",
 });
 
 const StyledFormula = styled("span", {
 	display: "block",
-	fontSize: "0.72rem",
+	fontSize: "$normal",
 	fontWeight: "$medium",
-	lineHeight: 1.1,
+	lineHeight: 1.4,
 	maxWidth: "15rem",
 	overflow: "hidden",
-	textAlign: "center",
+	textAlign: "left",
 	textOverflow: "ellipsis",
 	whiteSpace: "nowrap",
 	width: "max-content",
@@ -109,7 +103,7 @@ const DotHandleRow = styled("div", {
 	display: "flex",
 	flex: "0 0 auto",
 	height: "1.35rem",
-	width: "6px",
+	width: "10px",
 });
 
 const TopHandleRail = styled("div", {
@@ -125,8 +119,7 @@ const TopHandleRail = styled("div", {
 
 const ExpressionPopupFrame = styled("div", {
 	position: "fixed",
-	width: "min(28rem, calc(100vw - 2rem))",
-	minWidth: "14rem",
+	width: "min(360px, calc(100vw - 32px))",
 	transform: "translateX(-50%)",
 	zIndex: 20,
 });
@@ -139,30 +132,23 @@ const ExpressionPopup = styled(PopupContent, {
 
 const FormulaActionRow = styled("div", {
 	display: "flex",
-	justifyContent: "flex-end",
-	marginTop: "$xs",
+	alignItems: "center",
+	gap: "$xs",
 });
 
-const FormulaActionButton = styled("button", {
+const FormulaEditorHeader = styled("div", {
+	display: "flex",
+	justifyContent: "space-between",
 	alignItems: "center",
-	backgroundColor: "$white",
-	border: "1px solid $border-default",
-	borderRadius: "$inner",
-	boxShadow: "0 0.35rem 1rem rgba(29, 28, 28, 0.18)",
-	color: "$status-error",
-	cursor: "pointer",
-	display: "inline-flex",
-	height: "2rem",
-	justifyContent: "center",
-	width: "2rem",
+	marginBottom: "$sm",
+});
 
-	"&:hover": {
-		backgroundColor: "#fef2f2",
-		borderColor: "$status-error",
-	},
+const FormulaActionButton = styled(IconButton, {
+	defaultVariants: { context: "editor" },
 });
 
 const FormulaEditorShell = styled("div", {
+	...fieldSurfaceStyles,
 	position: "relative",
 	width: "100%",
 });
@@ -170,7 +156,7 @@ const FormulaEditorShell = styled("div", {
 const FormulaEditorHighlight = styled("div", {
 	borderRadius: "$inner",
 	color: "$text-primary",
-	fontFamily: "inherit",
+	fontFamily: "$number",
 	fontSize: "$normal",
 	inset: 0,
 	lineHeight: "1.75rem",
@@ -181,7 +167,7 @@ const FormulaEditorHighlight = styled("div", {
 	paddingInline: "$sm",
 	pointerEvents: "none",
 	position: "absolute",
-	textAlign: "center",
+	textAlign: "left",
 	whiteSpace: "pre-wrap",
 	wordBreak: "break-word",
 });
@@ -213,20 +199,20 @@ const BORDER_WIDTH = 1;
 const TOP_LABEL_CLEARANCE_HEIGHT = ROOT_FONT_SIZE * 0.2;
 const LEFT_LABEL_CLEARANCE_WIDTH = ROOT_FONT_SIZE * 0.2;
 const LEFT_HANDLE_BORDER_OVERLAP = SPACE_SM;
-const DOT_HANDLE_ROW_WIDTH = 6;
-const DOT_HANDLE_LEFT_MARGIN = LEFT_HANDLE_BORDER_OVERLAP - 3;
-const DOT_HANDLE_ROW_HEIGHT = ROOT_FONT_SIZE * 1.35;
-const LOCAL_HANDLE_MIN_WIDTH = ROOT_FONT_SIZE * 1.05;
-const LOCAL_HANDLE_HEIGHT = ROOT_FONT_SIZE * 1.05;
-const LOCAL_HANDLE_INLINE_PADDING = ROOT_FONT_SIZE * 0.14 * 2;
-const LOCAL_HANDLE_FONT_SIZE = ROOT_FONT_SIZE * 0.72;
-const LOCAL_HANDLE_FONT_WEIGHT = 600;
-const NORMAL_TEXT_FONT_SIZE = ROOT_FONT_SIZE;
+const DOT_HANDLE_ROW_WIDTH = 10;
+const DOT_HANDLE_LEFT_MARGIN = LEFT_HANDLE_BORDER_OVERLAP - 5;
+const DOT_HANDLE_ROW_HEIGHT = ROOT_FONT_SIZE * 1.5;
+const LOCAL_HANDLE_MIN_WIDTH = 28;
+const LOCAL_HANDLE_HEIGHT = 28;
+const LOCAL_HANDLE_INLINE_PADDING = ROOT_FONT_SIZE * 0.25 * 2;
+const LOCAL_HANDLE_FONT_SIZE = 20;
+const LOCAL_HANDLE_FONT_WEIGHT = 500;
+const NORMAL_TEXT_FONT_SIZE = 20;
 const NORMAL_TEXT_FONT_WEIGHT = 400;
-const NORMAL_TEXT_LINE_HEIGHT = ROOT_FONT_SIZE * 1.2;
-const FORMULA_TEXT_FONT_SIZE = ROOT_FONT_SIZE * 0.72;
+const NORMAL_TEXT_LINE_HEIGHT = NORMAL_TEXT_FONT_SIZE * 1.4;
+const FORMULA_TEXT_FONT_SIZE = 20;
 const FORMULA_TEXT_FONT_WEIGHT = 500;
-const FORMULA_TEXT_LINE_HEIGHT = FORMULA_TEXT_FONT_SIZE * 1.1;
+const FORMULA_TEXT_LINE_HEIGHT = FORMULA_TEXT_FONT_SIZE * 1.4;
 const FORMULA_TEXT_MAX_WIDTH = ROOT_FONT_SIZE * 15;
 const FORMULA_TEXT_WIDTH_BUFFER = ROOT_FONT_SIZE * 1.5;
 
@@ -241,30 +227,30 @@ type NumberNodeKind = "input" | "processor" | "output";
 
 const NODE_STYLE_BY_KIND = {
 	input: {
-		background: "#ffe4f1",
-		border: "#FF499E",
-		handle: "#c91d6f",
-		shadow: "rgba(255, 73, 158, 0.2)",
+		background: theme.colors.surface.toString(),
+		text: theme.colors["text-primary"].toString(),
+		handle: theme.colors["node-handle"].toString(),
+		handleText: theme.colors.surface.toString(),
 	},
 	processor: {
-		background: "#fff6d6",
-		border: "#FED766",
-		handle: "#b78d00",
-		shadow: "rgba(254, 215, 102, 0.24)",
+		background: theme.colors["node-processor"].toString(),
+		text: theme.colors["node-processor-text"].toString(),
+		handle: theme.colors["node-processor-text"].toString(),
+		handleText: theme.colors["node-processor"].toString(),
 	},
 	output: {
-		background: "#d9f7fb",
-		border: "#009FB7",
-		handle: "#006f80",
-		shadow: "rgba(0, 159, 183, 0.2)",
+		background: theme.colors["node-output"].toString(),
+		text: theme.colors["node-output-text"].toString(),
+		handle: theme.colors["node-output-text"].toString(),
+		handleText: theme.colors["node-output"].toString(),
 	},
 } satisfies Record<
 	NumberNodeKind,
 	{
 		background: string;
-		border: string;
+		text: string;
 		handle: string;
-		shadow: string;
+		handleText: string;
 	}
 >;
 
@@ -327,14 +313,16 @@ const getCanvasTextWidth = (
 	text: string,
 	fontSize: number,
 	fontWeight: number,
+	monospace = false,
 ) => {
 	if (typeof document !== "undefined") {
 		if (textMeasureContext === undefined) {
 			textMeasureContext = document.createElement("canvas").getContext("2d");
 		}
 		if (textMeasureContext) {
-			const fontFamily =
-				window.getComputedStyle(document.body).fontFamily || "sans-serif";
+			const fontFamily = monospace
+				? theme.fonts.number.value
+				: window.getComputedStyle(document.body).fontFamily;
 			textMeasureContext.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
 			return textMeasureContext.measureText(text).width;
 		}
@@ -432,14 +420,15 @@ const getNumberNodeSize = (
 	const topClearanceHeight =
 		hasTopLabel && !hasVisibleLeftLabel ? TOP_LABEL_CLEARANCE_HEIGHT : 0;
 	const leftClearanceWidth = hasVisibleLeftLabel
-		? LEFT_LABEL_CLEARANCE_WIDTH
-		: SPACE_SM;
+		? LEFT_LABEL_CLEARANCE_WIDTH + 12
+		: 20;
 	const leftColumnWidth = getLeftColumnWidth(leftInputs);
 	const leftColumnHeight = getLeftColumnHeight(leftInputs);
 	const valueWidth = getCanvasTextWidth(
 		getValueText(node),
 		NORMAL_TEXT_FONT_SIZE,
 		NORMAL_TEXT_FONT_WEIGHT,
+		true,
 	);
 	const formulaText = getFormulaText(node);
 	const formulaWidth = formulaText
@@ -448,29 +437,23 @@ const getNumberNodeSize = (
 					formulaText,
 					FORMULA_TEXT_FONT_SIZE,
 					FORMULA_TEXT_FONT_WEIGHT,
+					true,
 				) + FORMULA_TEXT_WIDTH_BUFFER,
 				FORMULA_TEXT_MAX_WIDTH,
 			)
 		: 0;
 	const formulaHeight = formulaText ? FORMULA_TEXT_LINE_HEIGHT + SPACE_XS : 0;
 	const nameWidth = node.data.name
-		? getCanvasTextWidth(
-				node.data.name.toUpperCase(),
-				NORMAL_TEXT_FONT_SIZE,
-				NORMAL_TEXT_FONT_WEIGHT,
-			)
+		? getCanvasTextWidth(node.data.name, 20, NORMAL_TEXT_FONT_WEIGHT)
 		: 0;
-	const nameHeight = node.data.name
-		? NORMAL_TEXT_LINE_HEIGHT + BORDER_WIDTH
-		: 0;
+	const nameHeight = node.data.name ? 20 * 1.4 + 16 : 0;
 	const bodyWidth =
 		leftColumnWidth +
 		Math.max(valueWidth, formulaWidth) +
 		leftClearanceWidth +
-		SPACE_SM;
+		20;
 	const bodyHeight =
-		Math.max(leftColumnHeight, NORMAL_TEXT_LINE_HEIGHT + formulaHeight) +
-		SPACE_XS * 2;
+		Math.max(leftColumnHeight, NORMAL_TEXT_LINE_HEIGHT + formulaHeight) + 32;
 	const width = Math.ceil(Math.max(bodyWidth, nameWidth) + BORDER_WIDTH * 2);
 	const height = Math.ceil(
 		topClearanceHeight + nameHeight + bodyHeight + BORDER_WIDTH * 2,
@@ -478,7 +461,7 @@ const getNumberNodeSize = (
 	const clampedHeight = Math.max(height, GRID_CELL_SIZE);
 
 	return {
-		width: Math.max(width, clampedHeight),
+		width: Math.max(width, inputs.length > 0 ? 180 : 144),
 		height: clampedHeight,
 	};
 };
@@ -612,8 +595,6 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	>();
 	const updateNodeInternals = useUpdateNodeInternals();
 
-	const outHandleId = useId();
-
 	const nodeId = useNodeId();
 	const allEdges = useEdges<WeightedEdgeType>();
 	const allNodes = useNodes<NumberNodeType>();
@@ -668,7 +649,8 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const formulaText = inputs.length > 0 ? expression.trim() : "";
 	const handleStyle = {
 		background: nodeStyle.handle,
-		border: `1px solid ${nodeStyle.border}`,
+		border: `1px solid ${nodeStyle.background}`,
+		color: nodeStyle.handleText,
 	};
 	const currentNode = useMemo(
 		() => allNodes.find((node) => node.id === nodeId),
@@ -755,8 +737,8 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 	const hasTopLabel = topInputs.some((name) => name !== "input");
 	const hasVisibleLeftLabel = leftInputs.some((name) => name !== "input");
 	const leftContentPadding = hasVisibleLeftLabel
-		? `${LEFT_LABEL_CLEARANCE_WIDTH}px`
-		: "$sm";
+		? `${LEFT_LABEL_CLEARANCE_WIDTH + 12}px`
+		: "20px";
 	const needsTopLabelClearance = hasTopLabel && !hasVisibleLeftLabel;
 	const sourcePosition = useMemo(() => {
 		if (!currentNode || !nodeId) {
@@ -862,18 +844,9 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			setEdges(nextEdges);
 		}
 		if (editSessionInputs) {
-			saveFlowState(getNodes(), nextEdges);
 			setEditSessionInputs(null);
 		}
-	}, [
-		editSessionInputs,
-		getEdges,
-		getNodes,
-		inputs,
-		isEditing,
-		nodeId,
-		setEdges,
-	]);
+	}, [editSessionInputs, getEdges, inputs, isEditing, nodeId, setEdges]);
 
 	const handleChange = ({
 		currentTarget,
@@ -904,15 +877,20 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 		);
 		setNodes(nextNodes);
 		setEdges(nextEdges);
-		saveFlowState(nextNodes, nextEdges);
 		setIsEditing(false);
 	};
 
 	const openEditor = (target: HTMLElement) => {
 		const rect = target.getBoundingClientRect();
 		setPopupPosition({
-			top: rect.bottom + 8,
-			left: rect.left + rect.width / 2,
+			top: Math.max(16, Math.min(rect.bottom + 12, window.innerHeight - 240)),
+			left: Math.max(
+				Math.min(360, window.innerWidth - 32) / 2 + 16,
+				Math.min(
+					rect.left + rect.width / 2,
+					window.innerWidth - Math.min(360, window.innerWidth - 32) / 2 - 16,
+				),
+			),
 		});
 		setEditSessionInputs(inputs);
 		setIsEditing(true);
@@ -1004,10 +982,10 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			ref={nodeRef}
 			column
 			center
-			// biome-ignore lint/a11y/useSemanticElements: React Flow nodes carry draggable handles and layout content, so a native button would create invalid nested structure here.
 			role="button"
 			tabIndex={0}
 			aria-label="Edit expression"
+			data-node-kind={nodeKind}
 			onPointerDown={handleFieldPointerDown}
 			onPointerMove={handleFieldPointerMove}
 			onPointerUp={handleFieldPointerUp}
@@ -1026,16 +1004,19 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 			}}
 			css={{
 				background: nodeStyle.background,
+				color: nodeStyle.text,
 				position: "relative",
 				width: `${nodeSize.width}px`,
 				height: `${nodeSize.height}px`,
-				border: `1px solid ${nodeStyle.border}`,
+				border: "1px solid transparent",
 				borderRadius: "$basic",
-				boxShadow: `0 0.35rem 1rem ${nodeStyle.shadow}`,
+				boxShadow: isEditing
+					? `0 0 0 2px ${theme.colors["border-focus"]}`
+					: "$node",
 				cursor: isMovingNode ? "grabbing" : "grab",
 
 				"&:focus-visible": {
-					outline: `2px solid ${nodeStyle.border}`,
+					outline: "2px solid $border-focus",
 					outlineOffset: "3px",
 				},
 			}}
@@ -1071,10 +1052,13 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 					center
 					css={{
 						width: "100%",
-						borderBottom: `1px solid ${nodeStyle.border}`,
+						justifyContent: "flex-start",
+						paddingInline: "20px",
+						paddingTop: "16px",
+						fontSize: "$normal",
 					}}
 				>
-					<StyledText>{name.toUpperCase()}</StyledText>
+					<span>{name}</span>
 				</Box>
 			)}
 
@@ -1082,7 +1066,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 				css={{
 					width: "100%",
 					height: "auto",
-					paddingBlock: "$xs",
+					paddingBlock: "16px",
 					alignItems: "stretch",
 				}}
 			>
@@ -1104,7 +1088,7 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 								css={{
 									marginLeft: hasLeftColumnSpace
 										? `${DOT_HANDLE_LEFT_MARGIN}px`
-										: "-3px",
+										: "-5px",
 								}}
 							>
 								<DotHandle
@@ -1136,15 +1120,19 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 						minWidth: 0,
 						position: "relative",
 						paddingLeft: leftContentPadding,
-						paddingRight: "$sm",
+						paddingRight: "20px",
+						alignItems: "flex-start",
 					}}
 				>
 					<StyledField data-node-field>
-						<StyledText>{computedValue ?? 0}</StyledText>
+						<span>{computedValue ?? 0}</span>
 					</StyledField>
 					{formulaText && (
 						<StyledFormula title={formulaText}>
-							<FormulaTokens expression={formulaText} />
+							<FormulaTokens
+								expression={formulaText}
+								inverse={nodeKind === "output"}
+							/>
 						</StyledFormula>
 					)}
 
@@ -1153,6 +1141,12 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 						createPortal(
 							<ExpressionPopupFrame
 								className="nodrag nowheel nopan"
+								role="dialog"
+								aria-label="Expression editor"
+								onBlur={(event) => {
+									if (!event.currentTarget.contains(event.relatedTarget))
+										setIsEditing(false);
+								}}
 								css={{
 									top: popupPosition.top,
 									left: popupPosition.left,
@@ -1161,6 +1155,30 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 								onPointerDown={(event) => event.stopPropagation()}
 							>
 								<ExpressionPopup>
+									<FormulaEditorHeader>
+										<span>Expression</span>
+										<FormulaActionRow>
+											<FormulaActionButton
+												appearance="danger"
+												aria-label="Remove node"
+												onClick={removeCurrentNode}
+												onPointerDown={(event) => {
+													event.preventDefault();
+												}}
+												title="Remove node"
+												type="button"
+											>
+												<Trash2 aria-hidden size={18} strokeWidth={2} />
+											</FormulaActionButton>
+											<FormulaActionButton
+												type="button"
+												aria-label="Close editor"
+												onClick={() => setIsEditing(false)}
+											>
+												<X aria-hidden size={16} />
+											</FormulaActionButton>
+										</FormulaActionRow>
+									</FormulaEditorHeader>
 									<FormulaEditorShell>
 										<FormulaEditorHighlight aria-hidden="true">
 											<FormulaEditorHighlightContent
@@ -1173,9 +1191,9 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 										</FormulaEditorHighlight>
 										<StyledTextarea
 											ref={inputRef}
+											aria-label="Expression"
 											value={expression ?? ""}
 											onChange={handleChange}
-											onBlur={() => setIsEditing(false)}
 											onKeyDown={handleInputKeyDown}
 											onScroll={(event) => {
 												setEditorScroll({
@@ -1187,19 +1205,6 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 										/>
 									</FormulaEditorShell>
 								</ExpressionPopup>
-								<FormulaActionRow>
-									<FormulaActionButton
-										aria-label="Remove node"
-										onClick={removeCurrentNode}
-										onPointerDown={(event) => {
-											event.preventDefault();
-										}}
-										title="Remove node"
-										type="button"
-									>
-										<Trash2 aria-hidden size={18} strokeWidth={2} />
-									</FormulaActionButton>
-								</FormulaActionRow>
 							</ExpressionPopupFrame>,
 							document.body,
 						)}
@@ -1208,9 +1213,9 @@ export const NumberNode: FC<NodeProps<NumberNodeType>> = ({
 
 			<Handle
 				type="source"
-				id={outHandleId}
+				id="output"
 				position={sourcePosition}
-				style={{ zIndex: 2, ...handleStyle }}
+				style={{ zIndex: 2, width: 10, height: 10, ...handleStyle }}
 			/>
 		</Box>
 	);

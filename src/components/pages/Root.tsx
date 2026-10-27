@@ -7,28 +7,33 @@ import {
 	type Connection,
 	type EdgeChange,
 	type NodeChange,
-	type OnNodeDrag,
 	Panel,
 	ReactFlow,
 	type ReactFlowInstance,
 	type SnapGrid,
-	useEdgesState,
-	useNodesState,
 } from "@xyflow/react";
 import { Grid3X3, Move, Trash2 } from "lucide-react";
 import {
 	type FC,
 	type MouseEvent,
 	useCallback,
+	useEffect,
 	useId,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
-import { styled } from "@/theme";
+import { styled, theme } from "@/theme";
 import { GRID_CELL_SIZE } from "@/utils/layout";
-import { loadFlowState, saveFlowState } from "@/utils/persistence";
+import {
+	createPage,
+	type FlowPage,
+	loadWorkspaceState,
+	saveWorkspaceState,
+} from "@/utils/persistence";
 import { Box } from "../ui/Box";
+import { ControlPanel, IconButton, PanelButton } from "../ui/Controls";
+import { PageSwitcher } from "./PageSwitcher";
 
 import "@xyflow/react/dist/style.css";
 import {
@@ -39,9 +44,7 @@ import {
 import { NumberNode, type NumberNodeType } from "../nodes/NumberNode";
 
 const SNAP_GRID: SnapGrid = [GRID_CELL_SIZE, GRID_CELL_SIZE];
-const MAJOR_GRID_GAP = GRID_CELL_SIZE * 5;
-const FINE_GRID_DOT_SIZE = 1.3;
-const MAJOR_GRID_DOT_SIZE = 1.6;
+const FINE_GRID_DOT_SIZE = 1.6;
 const ACTION_MENU_OFFSET = 8;
 const ACTION_MENU_EDGE_MARGIN = 12;
 
@@ -52,74 +55,38 @@ type ActionMenuTarget = {
 	top: number;
 };
 
-const SnapToggleButton = styled("button", {
+const PageControls = styled("div", {
+	display: "flex",
 	alignItems: "center",
-	backgroundColor: "$white",
-	border: "1px solid $border-default",
-	borderRadius: "$inner",
-	boxShadow: "0 0.25rem 0.75rem rgba(29, 28, 28, 0.12)",
-	color: "$text-primary",
-	cursor: "pointer",
-	display: "inline-flex",
-	fontFamily: "inherit",
-	fontSize: "$small",
-	fontWeight: "$semibold",
-	gap: "$xs",
-	height: "2.25rem",
-	paddingInline: "$sm",
-
-	"&:hover": {
-		backgroundColor: "#f8fafc",
-	},
-
-	variants: {
-		active: {
-			true: {
-				backgroundColor: "$interactive-primary",
-				borderColor: "$interactive-primary",
-				color: "$text-inverse",
-
-				"&:hover": {
-					backgroundColor: "$interactive-primary-hover",
-				},
-			},
-		},
-	},
+	gap: "$lg",
+	minHeight: "44px",
 });
 
-const PanelControls = styled("div", {
-	display: "inline-flex",
-	gap: "$xs",
+const RepositionLabel = styled("span", {
+	"@media (max-width: 600px)": { display: "none" },
 });
 
-const FloatingActionButton = styled("button", {
-	alignItems: "center",
-	backgroundColor: "$white",
-	border: "1px solid $border-default",
-	borderRadius: "$inner",
-	color: "$status-error",
-	cursor: "pointer",
-	display: "inline-flex",
-	height: "2rem",
-	justifyContent: "center",
+const FloatingActionButton = styled(IconButton, {
 	position: "fixed",
-	width: "2rem",
+	boxShadow: "$panel",
 	zIndex: 20,
+});
 
-	"&:hover": {
-		backgroundColor: "#fef2f2",
-		borderColor: "$status-error",
-	},
+const CanvasHint = styled("span", {
+	color: "$text-muted",
+	fontSize: "$caption",
+	textAlign: "center",
+	pointerEvents: "none",
 });
 
 const getActionMenuPosition = (event: MouseEvent) => ({
 	left: Math.min(
 		event.clientX + ACTION_MENU_OFFSET,
-		window.innerWidth - ACTION_MENU_EDGE_MARGIN,
+		window.innerWidth - ACTION_MENU_EDGE_MARGIN - 44,
 	),
 	top: Math.min(
 		event.clientY + ACTION_MENU_OFFSET,
-		window.innerHeight - ACTION_MENU_EDGE_MARGIN,
+		window.innerHeight - ACTION_MENU_EDGE_MARGIN - 44,
 	),
 });
 
@@ -129,17 +96,67 @@ const snapPositionToGrid = (position: NumberNodeType["position"]) => ({
 });
 
 export const Root: FC = () => {
-	const initialState = useMemo(() => loadFlowState(), []);
-	const [nodes, setNodes, applyNodesChange] = useNodesState<NumberNodeType>(
-		initialState.nodes,
+	const [workspace, setWorkspace] = useState(loadWorkspaceState);
+	const { pages, activePageId } = workspace;
+	const activePage = pages.find((page) => page.id === activePageId) ?? pages[0];
+	const { nodes, edges } = activePage;
+	const updatePage = useCallback(
+		(update: (page: FlowPage) => FlowPage) => {
+			setWorkspace((previous) => ({
+				...previous,
+				pages: previous.pages.map((page) =>
+					page.id === activePageId ? update(page) : page,
+				),
+			}));
+		},
+		[activePageId],
 	);
-	const [edges, setEdges, applyEdgesChange] = useEdgesState<WeightedEdgeType>(
-		initialState.edges,
+	const setNodes = useCallback(
+		(nodes: NumberNodeType[]) => {
+			updatePage((page) => ({ ...page, nodes }));
+		},
+		[updatePage],
 	);
+	const setEdges = useCallback(
+		(edges: WeightedEdgeType[]) => {
+			updatePage((page) => ({ ...page, edges }));
+		},
+		[updatePage],
+	);
+	useEffect(() => saveWorkspaceState(workspace), [workspace]);
+
+	const selectPage = (id: string) => {
+		setActionMenu(null);
+		setWorkspace((previous) => ({ ...previous, activePageId: id }));
+	};
+	const addPage = (name: string) => {
+		setWorkspace((previous) => {
+			let pageNumber = 1;
+			while (previous.pages.some((page) => page.name === `Page ${pageNumber}`))
+				pageNumber++;
+			const page = createPage(name || `Page ${pageNumber}`);
+			return { pages: [...previous.pages, page], activePageId: page.id };
+		});
+		setActionMenu(null);
+	};
+	const deletePage = (id: string) => {
+		setWorkspace((previous) => {
+			if (previous.pages.length === 1) return previous;
+			const index = previous.pages.findIndex((page) => page.id === id);
+			if (index < 0) return previous;
+			return {
+				pages: previous.pages.filter((page) => page.id !== id),
+				activePageId:
+					id === previous.activePageId
+						? (previous.pages[index + 1] ?? previous.pages[index - 1]).id
+						: previous.activePageId,
+			};
+		});
+		setActionMenu(null);
+	};
 	const [snapToGrid, setSnapToGrid] = useState(false);
 	const [actionMenu, setActionMenu] = useState<ActionMenuTarget | null>(null);
 	const fineGridId = useId();
-	const majorGridId = useId();
 	const reactFlowRef =
 		useRef<ReactFlowInstance<NumberNodeType, WeightedEdgeType>>(null);
 
@@ -166,39 +183,33 @@ export const Root: FC = () => {
 		(connection: Connection) => {
 			const nextEdges = addEdge(buildEdge(connection), edges);
 			setEdges(nextEdges);
-			saveFlowState(nodes, nextEdges);
 		},
-		[buildEdge, edges, nodes, setEdges],
+		[buildEdge, edges, setEdges],
 	);
 	const onNodesChange = useCallback(
 		(changes: NodeChange<NumberNodeType>[]) => {
-			applyNodesChange(changes);
-			if (!changes.some((change) => change.type === "remove")) return;
-
-			const removedNodeIds = new Set(
-				changes
-					.filter((change) => change.type === "remove")
-					.map((change) => change.id),
-			);
-			const nextNodes = applyNodeChanges(changes, nodes);
-			const nextEdges = edges.filter(
-				(edge) =>
-					!removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target),
-			);
-			setEdges(nextEdges);
-			saveFlowState(nextNodes, nextEdges);
+			updatePage((page) => {
+				const nextNodes = applyNodeChanges(changes, page.nodes);
+				const nodeIds = new Set(nextNodes.map((node) => node.id));
+				return {
+					...page,
+					nodes: nextNodes,
+					edges: page.edges.filter(
+						(edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
+					),
+				};
+			});
 		},
-		[applyNodesChange, edges, nodes, setEdges],
+		[updatePage],
 	);
 	const onEdgesChange = useCallback(
 		(changes: EdgeChange<WeightedEdgeType>[]) => {
-			applyEdgesChange(changes);
-			if (!changes.some((change) => change.type === "remove")) return;
-
-			const nextEdges = applyEdgeChanges(changes, edges);
-			saveFlowState(nodes, nextEdges);
+			updatePage((page) => ({
+				...page,
+				edges: applyEdgeChanges(changes, page.edges),
+			}));
 		},
-		[applyEdgesChange, edges, nodes],
+		[updatePage],
 	);
 	const onPaneClick = useCallback(
 		(event: MouseEvent) => {
@@ -214,13 +225,12 @@ export const Root: FC = () => {
 			);
 			if (!position) return;
 
-			const id = Date.now().toString();
+			const id = crypto.randomUUID();
 			const nodePosition = snapToGrid ? snapPositionToGrid(position) : position;
 			const nextNodes = [...nodes, createNumberNode(id, nodePosition)];
 			setNodes(nextNodes);
-			saveFlowState(nextNodes, edges);
 		},
-		[createNumberNode, edges, nodes, setNodes, snapToGrid],
+		[createNumberNode, nodes, setNodes, snapToGrid],
 	);
 	const onEdgeClick = useCallback(
 		(event: MouseEvent, edge: WeightedEdgeType) => {
@@ -238,45 +248,27 @@ export const Root: FC = () => {
 
 		const nextEdges = edges.filter((edge) => edge.id !== actionMenu.id);
 		setEdges(nextEdges);
-		saveFlowState(nodes, nextEdges);
 
 		setActionMenu(null);
-	}, [actionMenu, edges, nodes, setEdges]);
+	}, [actionMenu, edges, setEdges]);
 	const snapNodesToGrid = useCallback(() => {
 		const nextNodes = nodes.map((node) => ({
 			...node,
 			position: snapPositionToGrid(node.position),
 		}));
 		setNodes(nextNodes);
-		saveFlowState(nextNodes, edges);
-	}, [edges, nodes, setNodes]);
-	const onNodeDragStop = useCallback<OnNodeDrag<NumberNodeType>>(
-		(_event, draggedNode, draggedNodes) => {
-			const draggedById = new Map(
-				[draggedNode, ...draggedNodes].map((node) => [node.id, node]),
-			);
-			const nextNodes = nodes.map((node) => {
-				const dragged = draggedById.get(node.id);
-				return dragged
-					? {
-							...node,
-							position: {
-								x: dragged.position.x,
-								y: dragged.position.y,
-							},
-						}
-					: node;
-			});
-			saveFlowState(nextNodes, edges);
-		},
-		[edges, nodes],
-	);
+	}, [nodes, setNodes]);
 	const nodeTypes = useMemo(() => ({ number: NumberNode }), []);
 	const edgeTypes = useMemo(() => ({ weighted: WeightedEdge }), []);
 
 	return (
 		<Box column center style={{ width: "100vw", height: "100vh" }}>
 			<ReactFlow
+				key={activePage.id}
+				defaultViewport={activePage.viewport}
+				onMoveEnd={(_, viewport) =>
+					updatePage((page) => ({ ...page, viewport }))
+				}
 				{...{ nodes, edges, onNodesChange, onEdgesChange, onConnect }}
 				nodeTypes={nodeTypes}
 				edgeTypes={edgeTypes}
@@ -285,7 +277,6 @@ export const Root: FC = () => {
 					reactFlowRef.current = reactFlow;
 				}}
 				onEdgeClick={onEdgeClick}
-				onNodeDragStop={onNodeDragStop}
 				onPaneClick={onPaneClick}
 				panOnDrag={[1]}
 				panOnScroll
@@ -294,10 +285,20 @@ export const Root: FC = () => {
 				zoomOnDoubleClick={false}
 				zoomOnScroll={false}
 			>
+				<Panel position="top-left">
+					<PageControls>
+						<PageSwitcher
+							pages={pages}
+							activePageId={activePageId}
+							onSelect={selectPage}
+							onCreate={addPage}
+							onDelete={deletePage}
+						/>
+					</PageControls>
+				</Panel>
 				<Panel position="top-right">
-					<PanelControls>
-						<SnapToggleButton
-							active={snapToGrid}
+					<ControlPanel>
+						<PanelButton
 							aria-label={`${snapToGrid ? "Disable" : "Enable"} grid snapping`}
 							aria-pressed={snapToGrid}
 							className="nopan"
@@ -307,8 +308,8 @@ export const Root: FC = () => {
 						>
 							<Grid3X3 aria-hidden size={18} strokeWidth={2} />
 							Snap
-						</SnapToggleButton>
-						<SnapToggleButton
+						</PanelButton>
+						<PanelButton
 							aria-label="Reposition nodes to closest grid cells"
 							className="nopan"
 							onClick={snapNodesToGrid}
@@ -316,12 +317,13 @@ export const Root: FC = () => {
 							type="button"
 						>
 							<Move aria-hidden size={18} strokeWidth={2} />
-							Reposition
-						</SnapToggleButton>
-					</PanelControls>
+							<RepositionLabel>Reposition</RepositionLabel>
+						</PanelButton>
+					</ControlPanel>
 				</Panel>
 				{actionMenu && (
 					<FloatingActionButton
+						appearance="danger"
 						aria-label={`Remove ${actionMenu.kind}`}
 						className="nodrag nopan"
 						onClick={removeActionMenuTarget}
@@ -337,20 +339,24 @@ export const Root: FC = () => {
 				)}
 				<Background
 					id={fineGridId}
-					color="#64748b"
+					color={theme.colors.grid.toString()}
 					gap={GRID_CELL_SIZE}
 					offset={FINE_GRID_DOT_SIZE / 2}
 					size={FINE_GRID_DOT_SIZE}
 					variant={BackgroundVariant.Dots}
 				/>
-				<Background
-					id={majorGridId}
-					color="#64748b"
-					gap={MAJOR_GRID_GAP}
-					offset={MAJOR_GRID_DOT_SIZE / 2}
-					size={MAJOR_GRID_DOT_SIZE}
-					variant={BackgroundVariant.Dots}
-				/>
+				<Panel
+					position="bottom-center"
+					style={{
+						pointerEvents: "none",
+						width: "calc(100% - 32px)",
+						textAlign: "center",
+					}}
+				>
+					<CanvasHint>
+						Double-click to add a number · Click a number to edit
+					</CanvasHint>
+				</Panel>
 			</ReactFlow>
 		</Box>
 	);

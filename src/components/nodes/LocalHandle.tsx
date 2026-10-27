@@ -1,7 +1,5 @@
-import type { CSSProperties } from "@stitches/react";
 import { Handle, type Position, useNodeId, useReactFlow } from "@xyflow/react";
-import type { FC } from "react";
-import { saveFlowState } from "@/utils/persistence";
+import type { CSSProperties, FC } from "react";
 import type { WeightedEdgeType } from "../edges/WeightedEdge";
 import { StyledText } from "../ui/Typography";
 import type { NumberNodeType } from "./NumberNode";
@@ -24,7 +22,7 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 	label,
 }) => {
 	const nodeId = useNodeId();
-	const { getEdges, getNodes, setEdges } = useReactFlow<
+	const { getEdges, setEdges } = useReactFlow<
 		NumberNodeType,
 		WeightedEdgeType
 	>();
@@ -37,7 +35,6 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 			(edge) => edge[type] !== nodeId || edge[`${type}Handle`] !== id,
 		);
 		setEdges(nextEdges);
-		saveFlowState(getNodes(), nextEdges);
 	};
 
 	return (
@@ -55,32 +52,31 @@ export const LocalHandle: FC<NodeHandleProps> = ({
 				display: "inline-flex",
 				alignItems: "center",
 				justifyContent: "center",
-				width: isCircle ? "1.05rem" : "auto",
-				height: "1.05rem",
-				minWidth: "1.05rem",
-				minHeight: "1.05rem",
-				background: "black",
+				width: isCircle ? "1.75rem" : "auto",
+				height: "1.75rem",
+				minWidth: "1.75rem",
+				minHeight: "1.75rem",
+				background: "var(--colors-node-handle)",
 				backgroundClip: "padding-box",
 				boxShadow: "none",
-				color: "white",
+				color: "var(--colors-surface)",
 				border: "none",
 				borderRadius: "999px",
 				cursor: "crosshair",
 				outline: "none",
-				padding: isCircle ? 0 : "0 0.14rem",
+				padding: isCircle ? 0 : "0 0.25rem",
 				transform: "none",
 				...style,
 			}}
 			onContextMenu={onContextMenu}
 		>
 			<StyledText
-				color="inverse"
 				css={{
 					alignItems: "center",
 					background: "transparent",
 					border: "none",
 					display: "inline-flex",
-					fontSize: "0.72rem",
+					fontSize: "$normal",
 					fontWeight: "$semibold",
 					height: "100%",
 					justifyContent: "center",
@@ -101,7 +97,7 @@ export const DotHandle: FC<DotHandleProps> = ({
 	style,
 }) => {
 	const nodeId = useNodeId();
-	const { getEdges, getNodes, setEdges } = useReactFlow<
+	const { getEdges, setEdges } = useReactFlow<
 		NumberNodeType,
 		WeightedEdgeType
 	>();
@@ -113,7 +109,6 @@ export const DotHandle: FC<DotHandleProps> = ({
 			(edge) => edge[type] !== nodeId || edge[`${type}Handle`] !== id,
 		);
 		setEdges(nextEdges);
-		saveFlowState(getNodes(), nextEdges);
 	};
 
 	return (
@@ -129,10 +124,10 @@ export const DotHandle: FC<DotHandleProps> = ({
 				bottom: "auto",
 				boxSizing: "border-box",
 				display: "inline-flex",
-				width: "6px",
-				height: "6px",
-				minWidth: "6px",
-				minHeight: "6px",
+				width: "10px",
+				height: "10px",
+				minWidth: "10px",
+				minHeight: "10px",
 				background:
 					"var(--xy-handle-background-color, var(--xy-handle-background-color-default))",
 				backgroundClip: "padding-box",

@@ -1,8 +1,10 @@
+import type { Viewport } from "@xyflow/react";
 import type { WeightedEdgeType } from "@/components/edges/WeightedEdge";
 import type { NumberNodeType } from "@/components/nodes/NumberNode";
 
 const STORAGE_KEY = "numberflow:state";
 const STORAGE_VERSION = 1;
+const PAGES_STORAGE_KEY = "numberflow:pages";
 
 type PersistedNode = Pick<NumberNodeType, "id" | "position" | "type"> & {
 	data: Pick<
@@ -26,6 +28,25 @@ export type FlowState = {
 	nodes: NumberNodeType[];
 	edges: WeightedEdgeType[];
 };
+
+export type FlowPage = FlowState & {
+	id: string;
+	name: string;
+	viewport: Viewport;
+};
+
+export type WorkspaceState = {
+	pages: FlowPage[];
+	activePageId: string;
+};
+
+export const createPage = (name: string): FlowPage => ({
+	id: crypto.randomUUID(),
+	name,
+	nodes: [],
+	edges: [],
+	viewport: { x: 0, y: 0, zoom: 1 },
+});
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null;
@@ -121,18 +142,82 @@ export const loadFlowState = (): FlowState => {
 	}
 };
 
-export const saveFlowState = (
-	nodes: NumberNodeType[],
-	edges: WeightedEdgeType[],
-) => {
-	if (typeof window === "undefined") {
-		return;
+const isViewport = (value: unknown): value is Viewport =>
+	isPosition(value) &&
+	Number.isFinite(value.x) &&
+	Number.isFinite(value.y) &&
+	"zoom" in value &&
+	typeof value.zoom === "number" &&
+	Number.isFinite(value.zoom) &&
+	value.zoom > 0;
+
+const isPage = (value: unknown): value is FlowPage =>
+	isRecord(value) &&
+	typeof value.id === "string" &&
+	typeof value.name === "string" &&
+	value.name.trim().length > 0 &&
+	isViewport(value.viewport) &&
+	Array.isArray(value.nodes) &&
+	value.nodes.every(isPersistedNode) &&
+	Array.isArray(value.edges) &&
+	value.edges.every(isPersistedEdge);
+
+const restorePage = (page: FlowPage): FlowPage => ({
+	...page,
+	// Older versions used React-generated IDs for the single output handle.
+	edges: page.edges.map((edge) => ({ ...edge, sourceHandle: "output" })),
+});
+
+export const loadWorkspaceState = (): WorkspaceState => {
+	if (typeof window !== "undefined") {
+		try {
+			const stored = window.localStorage.getItem(PAGES_STORAGE_KEY);
+			const parsed: unknown = stored ? JSON.parse(stored) : null;
+			if (
+				isRecord(parsed) &&
+				parsed.version === STORAGE_VERSION &&
+				Array.isArray(parsed.pages) &&
+				parsed.pages.length > 0 &&
+				parsed.pages.every(isPage) &&
+				new Set(parsed.pages.map((page) => page.id)).size ===
+					parsed.pages.length
+			) {
+				const pages = parsed.pages.map(restorePage);
+				return {
+					pages,
+					activePageId: pages.some((page) => page.id === parsed.activePageId)
+						? (parsed.activePageId as string)
+						: pages[0].id,
+				};
+			}
+		} catch {
+			// Fall back to the original saved canvas if page storage is unavailable.
+		}
 	}
+	const page = restorePage({ ...createPage("Page 1"), ...loadFlowState() });
+	return { pages: [page], activePageId: page.id };
+};
+
+export const saveWorkspaceState = ({ pages, activePageId }: WorkspaceState) => {
+	if (typeof window === "undefined") return;
 
 	try {
 		window.localStorage.setItem(
-			STORAGE_KEY,
-			JSON.stringify(toPersistedState(nodes, edges)),
+			PAGES_STORAGE_KEY,
+			JSON.stringify({
+				version: STORAGE_VERSION,
+				activePageId,
+				pages: pages.map((page) => {
+					const { nodes, edges } = toPersistedState(page.nodes, page.edges);
+					return {
+						id: page.id,
+						name: page.name,
+						viewport: page.viewport,
+						nodes,
+						edges,
+					};
+				}),
+			}),
 		);
 	} catch {
 		// Storage can fail in private browsing or under quota pressure.

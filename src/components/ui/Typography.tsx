@@ -1,7 +1,7 @@
 import { styled } from "@/theme";
 
 export const StyledText = styled("span", {
-	color: "$text-primary",
+	color: "inherit",
 
 	variants: {
 		color: {
