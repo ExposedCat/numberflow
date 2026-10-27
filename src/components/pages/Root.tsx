@@ -75,78 +75,59 @@ const FloatingActionButton = styled(IconButton, {
 
 const CanvasHint = styled("div", {
 	color: "$text-muted",
-	fontSize: "$caption",
+	fontSize: "calc(1.25rem / 1.5)",
 	display: "flex",
 	alignItems: "center",
-	justifyContent: "center",
+	justifyContent: "space-evenly",
 	flexWrap: "wrap",
-	gap: "$sm $lg",
+	gap: "$sm",
 	pointerEvents: "none",
 });
 
 const HintItem = styled("span", {
 	display: "inline-flex",
 	alignItems: "center",
-	gap: "$sm",
+	gap: "calc(0.5rem / 1.5)",
 	whiteSpace: "nowrap",
-});
-
-const GestureIcon = styled("span", {
-	display: "inline-flex",
-	alignItems: "center",
-	gap: "3px",
-	fontSize: "0.75rem",
-	fontWeight: "$medium",
-	lineHeight: 1,
 });
 
 const KeyIcon = styled("kbd", {
 	display: "inline-flex",
 	alignItems: "center",
 	justifyContent: "center",
-	minWidth: "32px",
-	height: "25px",
-	padding: "0 5px",
+	minWidth: "calc(32px / 1.5)",
+	height: "calc(25px / 1.5)",
+	padding: "0 3px",
 	border: "1px solid currentColor",
-	borderBottomWidth: "3px",
-	borderRadius: "5px",
+	borderBottomWidth: "2px",
+	borderRadius: "3px",
 	fontFamily: "$body",
-	fontSize: "0.75rem",
+	fontSize: "0.5rem",
 	fontWeight: "$medium",
 	lineHeight: 1,
 });
 
-const MouseIcon = ({ gesture }: { gesture: "click" | "double" | "drag" }) => (
-	<GestureIcon>
-		<svg
-			width="20"
-			height="24"
-			viewBox="0 0 24 28"
-			fill="none"
-			role="img"
-			aria-label={
-				gesture === "double"
-					? "Double left-click"
-					: gesture === "drag"
-						? "Left-drag"
-						: "Left-click"
-			}
-		>
-			<path d="M12 3a8 8 0 0 0-8 8v2h8Z" fill="currentColor" />
-			<rect
-				x="4"
-				y="3"
-				width="16"
-				height="23"
-				rx="8"
-				stroke="currentColor"
-				strokeWidth="1.8"
-			/>
-			<path d="M12 3v10M4 13h16" stroke="currentColor" strokeWidth="1.8" />
-		</svg>
-		{gesture === "double" && <span aria-hidden>2×</span>}
-		{gesture === "drag" && <Move size={14} aria-hidden />}
-	</GestureIcon>
+const MouseIcon = () => (
+	<svg
+		width={20 / 1.5}
+		height={24 / 1.5}
+		viewBox="0 0 24 28"
+		fill="none"
+		role="img"
+		aria-label="Left mouse button"
+	>
+		<path d="M12 3a8 8 0 0 0-8 8v2h8Z" fill="currentColor" />
+		<rect
+			x="4"
+			y="3"
+			width="16"
+			height="23"
+			rx="8"
+			stroke="currentColor"
+			strokeWidth="1.8"
+		/>
+		<path d="M12 3v10M4 13h16" stroke="currentColor" strokeWidth="1.8" />
+	</svg>
 );
 
 const getActionMenuPosition = (event: MouseEvent) => ({
@@ -357,6 +338,7 @@ export const Root: FC = () => {
 				}
 			>
 				<ReactFlow
+					proOptions={{ hideAttribution: true }}
 					key={activePage.id}
 					defaultViewport={activePage.viewport}
 					onMoveEnd={(_, viewport) =>
@@ -449,16 +431,22 @@ export const Root: FC = () => {
 					>
 						<CanvasHint aria-label="Canvas shortcuts">
 							<HintItem>
-								<MouseIcon gesture="double" /> Add number
-							</HintItem>
-							<HintItem>
-								<MouseIcon gesture="click" /> Edit number
+								<span>2×</span>
+								<MouseIcon /> Add
 							</HintItem>
 							<HintItem>
 								<KeyIcon>Ctrl</KeyIcon>
 								<span aria-hidden>+</span>
-								<MouseIcon gesture="drag" /> Clip wires
+								<MouseIcon /> Clip
 							</HintItem>
+							<a
+								href="https://reactflow.dev"
+								target="_blank"
+								rel="noreferrer"
+								style={{ pointerEvents: "auto" }}
+							>
+								via React Flow
+							</a>
 						</CanvasHint>
 					</Panel>
 				</ReactFlow>
