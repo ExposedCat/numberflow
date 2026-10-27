@@ -73,12 +73,81 @@ const FloatingActionButton = styled(IconButton, {
 	zIndex: 20,
 });
 
-const CanvasHint = styled("span", {
+const CanvasHint = styled("div", {
 	color: "$text-muted",
 	fontSize: "$caption",
-	textAlign: "center",
+	display: "flex",
+	alignItems: "center",
+	justifyContent: "center",
+	flexWrap: "wrap",
+	gap: "$sm $lg",
 	pointerEvents: "none",
 });
+
+const HintItem = styled("span", {
+	display: "inline-flex",
+	alignItems: "center",
+	gap: "$sm",
+	whiteSpace: "nowrap",
+});
+
+const GestureIcon = styled("span", {
+	display: "inline-flex",
+	alignItems: "center",
+	gap: "3px",
+	fontSize: "0.75rem",
+	fontWeight: "$medium",
+	lineHeight: 1,
+});
+
+const KeyIcon = styled("kbd", {
+	display: "inline-flex",
+	alignItems: "center",
+	justifyContent: "center",
+	minWidth: "32px",
+	height: "25px",
+	padding: "0 5px",
+	border: "1px solid currentColor",
+	borderBottomWidth: "3px",
+	borderRadius: "5px",
+	fontFamily: "$body",
+	fontSize: "0.75rem",
+	fontWeight: "$medium",
+	lineHeight: 1,
+});
+
+const MouseIcon = ({ gesture }: { gesture: "click" | "double" | "drag" }) => (
+	<GestureIcon>
+		<svg
+			width="20"
+			height="24"
+			viewBox="0 0 24 28"
+			fill="none"
+			role="img"
+			aria-label={
+				gesture === "double"
+					? "Double left-click"
+					: gesture === "drag"
+						? "Left-drag"
+						: "Left-click"
+			}
+		>
+			<path d="M12 3a8 8 0 0 0-8 8v2h8Z" fill="currentColor" />
+			<rect
+				x="4"
+				y="3"
+				width="16"
+				height="23"
+				rx="8"
+				stroke="currentColor"
+				strokeWidth="1.8"
+			/>
+			<path d="M12 3v10M4 13h16" stroke="currentColor" strokeWidth="1.8" />
+		</svg>
+		{gesture === "double" && <span aria-hidden>2×</span>}
+		{gesture === "drag" && <Move size={14} aria-hidden />}
+	</GestureIcon>
+);
 
 const getActionMenuPosition = (event: MouseEvent) => ({
 	left: Math.min(
@@ -378,9 +447,18 @@ export const Root: FC = () => {
 							textAlign: "center",
 						}}
 					>
-						<CanvasHint>
-							Double-click to add a number · Click a number to edit · Ctrl +
-							drag across wires to clip
+						<CanvasHint aria-label="Canvas shortcuts">
+							<HintItem>
+								<MouseIcon gesture="double" /> Add number
+							</HintItem>
+							<HintItem>
+								<MouseIcon gesture="click" /> Edit number
+							</HintItem>
+							<HintItem>
+								<KeyIcon>Ctrl</KeyIcon>
+								<span aria-hidden>+</span>
+								<MouseIcon gesture="drag" /> Clip wires
+							</HintItem>
 						</CanvasHint>
 					</Panel>
 				</ReactFlow>
